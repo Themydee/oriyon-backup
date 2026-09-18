@@ -1,0 +1,41 @@
+export const COORDINATOR_LGA_MAP: Record<string, string> = {
+  "temicord@oriyon.ng": "Ibadan North",
+  "coordinator.ibadannorth@oriyon.com": "Ibadan North",
+  "coordinator.iseyin@oriyon.com": "Iseyin",
+  "coordinator.oyonorth@oriyon.com": "Oyo North",
+  "coordinator.oyosouth@oriyon.com": "Oyo South",
+  "coordinator.oyocentral@oriyon.com": "Oyo Central",
+  "coordinator.ibarapacentral@oriyon.com": "Ibarapa Central",
+  "coordinator.ibarapaeast@oriyon.com": "Ibarapa East",
+  "coordinator.ibarapanorth@oriyon.com": "Ibarapa North",
+  "coordinator.akinyele@oriyon.com": "Akinyele",
+  "coordinator.egbeda@oriyon.com": "Egbeda",
+  "coordinator.ibadannortheast@oriyon.com": "Ibadan North East",
+  "coordinator.ibadannorthwest@oriyon.com": "Ibadan North West",
+  "coordinator.ibadansoutheast@oriyon.com": "Ibadan South East",
+  "coordinator.ibadansouthwest@oriyon.com": "Ibadan South West",
+  "coordinator.ido@oriyon.com": "Ido",
+  "coordinator.lagelu@oriyon.com": "Lagelu",
+  "coordinator.oluyole@oriyon.com": "Oluyole",
+  "coordinator.onaara@oriyon.com": "Ona Ara",
+  "coordinator.afijio@oriyon.com": "Afijio",
+  "coordinator.atiba@oriyon.com": "Atiba",
+  "coordinator.atisbo@oriyon.com": "Atisbo",
+  "coordinator.iwajowa@oriyon.com": "Iwajowa",
+  "coordinator.kajola@oriyon.com": "Kajola",
+  "coordinator.ogooluwa@oriyon.com": "Ogo Oluwa",
+  "coordinator.ogbomoshonorth@oriyon.com": "Ogbomosho North",
+  "coordinator.ogbomoshosouth@oriyon.com": "Ogbomosho South",
+  "coordinator.orelope@oriyon.com": "Orelope",
+  "coordinator.oriire@oriyon.com": "Ori Ire",
+  "coordinator.oyoeast@oriyon.com": "Oyo East",
+  "coordinator.oyowest@oriyon.com": "Oyo West",
+  "coordinator.sakieast@oriyon.com": "Saki East",
+  "coordinator.sakiwest@oriyon.com": "Saki West",
+  "coordinator.surulere@oriyon.com": "Surulere",
+};
+
+export const isCoordinator = (email: string | null | undefined): boolean => {
+  if (!email) return false;
+  return Boolean(COORDINATOR_LGA_MAP[email.toLowerCase()]);
+};
