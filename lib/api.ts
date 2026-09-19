@@ -1,15 +1,23 @@
 import { useAuthStore } from "@/store/authStore";
 
 export function getApiBase(): string {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
   if (typeof window !== "undefined") {
-    // If running in browser and envUrl points to localhost while on live site, default to relative /api
-    if (!envUrl || (envUrl.includes("localhost") && !window.location.hostname.includes("localhost"))) {
-      return "/api";
-    }
-    return envUrl;
+    // In browser client-side, always use relative /api so requests are same-origin and proxied by Next.js rewrites, eliminating CORS errors
+    return "/api";
   }
-  return envUrl || "/api";
+  const envUrl = process.env.NEXT_PUBLIC_API_URL || process.env.API_GATEWAY_INTERNAL_URL;
+  if (!envUrl) return "/api";
+  return envUrl.endsWith("/api") ? envUrl : `${envUrl}/api`;
+}
+
+export function buildApiUrl(endpoint: string): string {
+  const base = getApiBase();
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+
+  if (base.endsWith("/api") && cleanEndpoint.startsWith("/api/")) {
+    return `${base}${cleanEndpoint.substring(4)}`;
+  }
+  return `${base}${cleanEndpoint}`;
 }
 
 const API_BASE = getApiBase();
@@ -27,8 +35,8 @@ export const refreshAccessToken = async (): Promise<string> => {
 
   refreshPromise = (async () => {
     try {
-      const baseUrl = getApiBase();
-      const res = await fetch(`${baseUrl}/auth/refresh`, {
+      const fullUrl = buildApiUrl("/auth/refresh");
+      const res = await fetch(fullUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
@@ -59,7 +67,8 @@ export const authFetch = async (
   let accessToken =
     useAuthStore.getState().accessToken ||
     (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null);
-  const baseUrl = getApiBase();
+
+  const fullUrl = buildApiUrl(url);
 
   const makeRequest = (token: string, forceReload = false) => {
     const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -75,7 +84,7 @@ export const authFetch = async (
 
     const cacheMode = forceReload ? "reload" : (options.cache ?? (options.method && options.method.toUpperCase() !== "GET" ? "no-store" : "default"));
 
-    return fetch(`${baseUrl}${url}`, {
+    return fetch(fullUrl, {
       cache: cacheMode,
       ...options,
       headers: {

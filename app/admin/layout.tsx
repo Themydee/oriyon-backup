@@ -6,9 +6,9 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { isCoordinator } from "@/lib/coordinators";
-import { authFetch, refreshAccessToken } from "@/lib/api";
+import { authFetch, refreshAccessToken, getApiBase } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = getApiBase();
 
 const NAV = [
   { href: "/admin/applications", icon: "📋", label: "Applications", roles: ["admin", "sub_admin"] },

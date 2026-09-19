@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useNavigationHistory } from "@/components/NavigationHistoryProvider";
-import { authFetch, refreshAccessToken } from "@/lib/api";
+import { authFetch, refreshAccessToken, getApiBase } from "@/lib/api";
 import { getUserPracticalCheckinWeeks, fetchAndSyncUserPracticalCheckins } from "@/lib/practicalData";
 import { getStoredReadings, ReadingMaterial } from "@/lib/readingsData";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const API_BASE = getApiBase();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Lesson {

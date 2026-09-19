@@ -198,9 +198,10 @@ export const defaultBlogPosts: BlogPost[] = [
   }
 ];
 
-const STORAGE_KEY = "oriyon_blog_posts_v1";
+import { getApiBase } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const STORAGE_KEY = "oriyon_blog_posts_v1";
+const API_BASE = getApiBase();
 
 export function getStoredBlogPosts(): BlogPost[] {
   if (typeof window === "undefined") return defaultBlogPosts;

@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useNavigationHistory } from "@/components/NavigationHistoryProvider";
-import { authFetch, refreshAccessToken } from "@/lib/api";
+import { authFetch, refreshAccessToken, getApiBase } from "@/lib/api";
 import {
   getUserAppeals,
   saveStoredAppeal,
@@ -13,7 +13,7 @@ import {
   AppealRecord,
 } from "@/lib/appealsData";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const API_BASE = getApiBase();
 
 const DAY_LABELS: Record<number, string> = {
   1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday",

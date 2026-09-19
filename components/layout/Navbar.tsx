@@ -141,7 +141,7 @@ export default function Navbar() {
               </div>
             </li>
 
-            <li><Link href="/shop" className={`text-[#00D1C1] ${isStartsWith("/shop") ? "text-[12px] xl:text-[13px] 2xl:text-sm font-bold text-[#00D1C1] whitespace-nowrap transition" : "text-[12px] xl:text-[13px] 2xl:text-sm font-bold text-gray-900 whitespace-nowrap transition hover:text-[#00D1C1]"}`}>Shop</Link></li>
+            <li><a href="/shop" className={`text-[#00D1C1] ${isStartsWith("/shop") ? "text-[12px] xl:text-[13px] 2xl:text-sm font-bold text-[#00D1C1] whitespace-nowrap transition" : "text-[12px] xl:text-[13px] 2xl:text-sm font-bold text-gray-900 whitespace-nowrap transition hover:text-[#00D1C1]"}`}>Shop</a></li>
             <li><Link href="/contact" className={linkClass("/contact")}>Contact</Link></li>
           </ul>
 
@@ -266,7 +266,7 @@ export default function Navbar() {
               )}
             </div>
 
-            <Link href="/shop" onClick={() => setIsOpen(false)} className={`text-[#00D1C1] transition ${isStartsWith("/shop") ? "text-[#00D1C1]" : "text-[#002d25] hover:text-[#00D1C1]"}`}>Shop</Link>
+            <a href="/shop" onClick={() => setIsOpen(false)} className={`text-[#00D1C1] transition ${isStartsWith("/shop") ? "text-[#00D1C1]" : "text-[#002d25] hover:text-[#00D1C1]"}`}>Shop</a>
             <Link href="/contact" onClick={() => setIsOpen(false)} className={`transition ${isActive("/contact") ? "text-[#00D1C1]" : "text-[#002d25] hover:text-[#00D1C1]"}`}>Contact</Link>
           </nav>
 

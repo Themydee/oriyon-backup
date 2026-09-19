@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useNavigationHistory } from "@/components/NavigationHistoryProvider";
-import { authFetch, refreshAccessToken } from "@/lib/api";
+import { authFetch, refreshAccessToken, getApiBase } from "@/lib/api";
 import {
   generateUserUniquePracticalCode,
   getStoredPracticalCheckins,
@@ -12,7 +12,7 @@ import {
   isTodayGroupPracticalDay,
 } from "@/lib/practicalData";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const API_BASE = getApiBase();
 
 function TraineePracticalAttendanceContent() {
   const router = useRouter();

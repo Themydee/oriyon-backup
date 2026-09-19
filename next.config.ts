@@ -2,10 +2,17 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async rewrites() {
+    const rawTarget =
+      process.env.API_GATEWAY_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      "http://localhost:3000";
+
+    const targetBase = rawTarget.replace(/\/api\/?$/, "").replace(/\/$/, "");
+
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.API_GATEWAY_INTERNAL_URL || "http://localhost:3000"}/api/:path*`,
+        destination: `${targetBase}/api/:path*`,
       },
     ];
   },
