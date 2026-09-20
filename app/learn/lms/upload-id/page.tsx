@@ -104,7 +104,7 @@ export default function UploadIdPage() {
         const canvas = document.createElement("canvas");
         let width = img.width;
         let height = img.height;
-        const maxDim = 1600;
+        const maxDim = 1200;
 
         if (width > maxDim || height > maxDim) {
           if (width > height) {
@@ -121,7 +121,7 @@ export default function UploadIdPage() {
         const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", 0.8));
+          resolve(canvas.toDataURL("image/jpeg", 0.7));
         } else {
           const reader = new FileReader();
           reader.readAsDataURL(file);
@@ -139,7 +139,11 @@ export default function UploadIdPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId || !idType || !file) return;
+    const activeUserId = userId || (typeof window !== "undefined" ? localStorage.getItem("userId") : null);
+    if (!activeUserId || !idType || !file) {
+      setError("Please ensure you select an ID type and upload a valid document.");
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -150,20 +154,19 @@ export default function UploadIdPage() {
       const updatePayload = {
         idType,
         idDocument: base64Str,
-        idDocumentUrl: base64Str,
         idFilename: file.name,
         idMimeType: isPdf ? "application/pdf" : "image/jpeg",
       };
 
-      // Try PATCH /users/${userId}/id-document first
-      let res = await authFetch(`/users/${userId}/id-document`, {
+      // Try PATCH /users/${activeUserId}/id-document first
+      let res = await authFetch(`/users/${activeUserId}/id-document`, {
         method: "PATCH",
         body: JSON.stringify(updatePayload),
       });
 
-      // Fallback to PATCH /users/${userId} if /id-document failed
+      // Fallback to PATCH /users/${activeUserId} if /id-document failed
       if (!res.ok) {
-        res = await authFetch(`/users/${userId}`, {
+        res = await authFetch(`/users/${activeUserId}`, {
           method: "PATCH",
           body: JSON.stringify(updatePayload),
         });

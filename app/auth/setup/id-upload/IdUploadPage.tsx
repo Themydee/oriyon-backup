@@ -80,7 +80,7 @@ export default function IdUploadPage() {
         const canvas = document.createElement("canvas");
         let width = img.width;
         let height = img.height;
-        const maxDim = 1600;
+        const maxDim = 1200;
 
         if (width > maxDim || height > maxDim) {
           if (width > height) {
@@ -97,7 +97,7 @@ export default function IdUploadPage() {
         const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", 0.8));
+          resolve(canvas.toDataURL("image/jpeg", 0.7));
         } else {
           const reader = new FileReader();
           reader.readAsDataURL(f);
@@ -185,7 +185,6 @@ export default function IdUploadPage() {
       const updatePayload = {
         idType,
         idDocument: base64Str,
-        idDocumentUrl: base64Str,
         idFilename: file.name,
         idMimeType: normalizedMime,
       };

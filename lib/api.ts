@@ -20,7 +20,18 @@ export function buildApiUrl(endpoint: string): string {
   return `${base}${cleanEndpoint}`;
 }
 
-const API_BASE = getApiBase();
+// Dynamic API_BASE object so accesses like `${API_BASE}/path` always call getApiBase() at evaluation time
+export const API_BASE = {
+  toString() {
+    return getApiBase();
+  },
+  valueOf() {
+    return getApiBase();
+  },
+  [Symbol.toPrimitive]() {
+    return getApiBase();
+  },
+} as unknown as string;
 
 let refreshPromise: Promise<string> | null = null;
 
@@ -114,5 +125,3 @@ export const authFetch = async (
 
   return res;
 };
-
-export { API_BASE };
