@@ -46,6 +46,7 @@ interface Question {
 
 interface Quiz {
   id: string;
+  cohortId?: string;
   title: string;
   questions: Question[];
   passingScore: number;
@@ -387,24 +388,50 @@ function QuizPanel({ quiz, userId, weekId, cohortId, onPassed }: {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]         = useState("");
 
-  const allAnswered = quiz.questions.every((q) => answers[q.id] !== undefined);
+  const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
+  const allAnswered = questions.length > 0 && questions.every((q) => q && q.id && answers[q.id] !== undefined);
+
+  const effectiveCohortId = cohortId || (quiz as any)?.cohortId || "";
 
   const submit = async () => {
     setSubmitting(true);
     setError("");
     try {
-      const res  = await authFetch(`/lms/quizzes/${quiz.id}/attempt`, {
+      const res = await authFetch(`/lms/quizzes/${quiz.id}/attempt`, {
         method: "POST",
-        body: JSON.stringify({ userId, weekId, cohortId, answers }),
+        body: JSON.stringify({ userId, weekId, cohortId: effectiveCohortId, answers }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (res && res.ok && data) {
         const isPassed = Boolean(data.passed) || (typeof data.score === "number" && data.score >= 70);
-        const normalizedData = { ...data, passed: isPassed };
+        const normalizedData = {
+          score: typeof data.score === "number" ? data.score : 0,
+          correct: typeof data.correct === "number" ? data.correct : 0,
+          total: typeof data.total === "number" ? data.total : questions.length,
+          ...data,
+          passed: isPassed,
+        };
         setResult(normalizedData);
         if (isPassed) setTimeout(onPassed, 2500);
       } else {
-        setError(data.error || "Failed to submit.");
+        const rawErr = data?.error || data?.message || "Failed to submit.";
+        let errStr = "Failed to submit.";
+        if (typeof rawErr === "string") {
+          errStr = rawErr;
+        } else if (rawErr && typeof rawErr === "object") {
+          if (rawErr.fieldErrors) {
+            const msgs = Object.values(rawErr.fieldErrors).flat().filter(Boolean);
+            if (msgs.length > 0) errStr = msgs.join(", ");
+            else errStr = JSON.stringify(rawErr.fieldErrors);
+          } else if (rawErr.formErrors && Array.isArray(rawErr.formErrors) && rawErr.formErrors.length > 0) {
+            errStr = rawErr.formErrors.join(", ");
+          } else if (rawErr.message) {
+            errStr = String(rawErr.message);
+          } else {
+            errStr = JSON.stringify(rawErr);
+          }
+        }
+        setError(errStr);
       }
     } catch {
       setError("Something went wrong.");
@@ -420,7 +447,7 @@ function QuizPanel({ quiz, userId, weekId, cohortId, onPassed }: {
         {result.passed ? "Quiz Passed!" : "Not Quite"}
       </h2>
       <p className="text-slate-500 text-sm mb-2">
-        You scored <span className="text-slate-800 font-bold">{result.score}%</span> ({result.correct}/{result.total} correct)
+        You scored <span className="text-slate-800 font-bold">{result.score}%</span> ({result.correct ?? 0}/{result.total ?? questions.length} correct)
       </p>
       <p className="text-slate-400 text-xs">
         {result.passed ? "Moving to dashboard..." : `You need 70% to pass. Review the lessons and try again.`}
@@ -442,24 +469,24 @@ function QuizPanel({ quiz, userId, weekId, cohortId, onPassed }: {
         <p className="text-slate-550 text-xs">Answer all questions · Passing score: 70%</p>
       </div>
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{String(error)}</div>
       )}
       <div className="flex flex-col gap-6 mb-8">
-        {quiz.questions.map((q, qi) => (
-          <div key={q.id} className="bg-white border border-[#e2e8f0] rounded-2xl p-5 shadow-sm">
+        {questions.map((q, qi) => (
+          <div key={q.id || qi} className="bg-white border border-[#e2e8f0] rounded-2xl p-5 shadow-sm">
             <p className="text-sm font-semibold text-slate-800 mb-4">
               <span className="text-green-600 font-bold mr-2">{qi + 1}.</span>
               {q.question}
             </p>
             <div className="flex flex-col gap-2">
-              {q.options.map((opt, oi) => (
+              {(Array.isArray(q.options) ? q.options : []).map((opt, oi) => (
                 <button key={oi} onClick={() => setAnswers({ ...answers, [q.id]: oi })}
                   className={`text-left px-4 py-3 rounded-xl border text-sm transition cursor-pointer ${
                     answers[q.id] === oi
                       ? "border-green-600 bg-green-50 text-green-700 font-bold"
                       : "border-slate-200 text-slate-600 bg-white hover:border-slate-350 hover:bg-slate-50"
                   }`}>
-                  <span className="font-bold mr-2 text-slate-400">{["A","B","C","D"][oi]}.</span>
+                  <span className="font-bold mr-2 text-slate-400">{["A","B","C","D"][oi] || `${oi + 1}.`}</span>
                   {opt}
                 </button>
               ))}
@@ -1027,6 +1054,9 @@ export default function WeekPage() {
         const weekRes = await authFetch(`/lms/weeks/${weekId}`);
         if (!weekRes.ok) { setError("Week not found."); setLoading(false); return; }
         const weekData = await weekRes.json();
+        if (weekData.cohortId) {
+          setCohortId((prev) => prev || weekData.cohortId);
+        }
 
         // Enforce lock date client-side block for trainees
         if (userRole === "trainee" && weekData.unlockDate) {
@@ -1396,7 +1426,7 @@ export default function WeekPage() {
               </div>
             ) : (
               <QuizPanel
-                quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId}
+                quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
                 onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
               />
             )
@@ -1492,7 +1522,7 @@ export default function WeekPage() {
           )}
           {mobilePanel === "quiz" && quiz && (
             <QuizPanel
-              quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId}
+              quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
               onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
             />
           )}
