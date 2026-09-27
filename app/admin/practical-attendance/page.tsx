@@ -125,7 +125,7 @@ export default function AdminPracticalAttendancePage() {
       groupList.forEach((g) => {
         const members = Array.isArray(g.members) ? g.members : [];
         members.forEach((m: any) => {
-          const uId = m.id || m.userId;
+          const uId = m.id || m.userId || m.user?.id;
           if (uId) {
             userMap.set(uId, {
               id: uId,
@@ -145,15 +145,28 @@ export default function AdminPracticalAttendancePage() {
         const cData = await cohortRes.json();
         const cMembers = Array.isArray(cData?.members) ? cData.members : [];
         cMembers.forEach((cm: any) => {
-          const uId = cm.id || cm.userId;
-          if (uId && userMap.has(uId)) {
-            const existing = userMap.get(uId)!;
-            userMap.set(uId, {
-              ...existing,
-              firstName: cm.firstName || cm.user?.firstName || existing.firstName,
-              lastName: cm.lastName || cm.user?.lastName || existing.lastName,
-              email: cm.email || cm.user?.email || existing.email,
-            });
+          const uId = cm.id || cm.userId || cm.user?.id;
+          if (uId) {
+            if (userMap.has(uId)) {
+              const existing = userMap.get(uId)!;
+              userMap.set(uId, {
+                ...existing,
+                firstName: cm.firstName || cm.user?.firstName || existing.firstName,
+                lastName: cm.lastName || cm.user?.lastName || existing.lastName,
+                email: cm.email || cm.user?.email || existing.email,
+              });
+            } else {
+              userMap.set(uId, {
+                id: uId,
+                firstName: cm.firstName || cm.user?.firstName || "Trainee",
+                lastName: cm.lastName || cm.user?.lastName || "",
+                email: cm.email || cm.user?.email || "",
+                role: cm.role || cm.user?.role || "trainee",
+                groupId: cm.groupId || "",
+                groupName: cm.groupName || cm.group?.name || "Unassigned Group",
+                practicalDay: cm.practicalDay || "Monday",
+              });
+            }
           }
         });
       }
@@ -321,9 +334,13 @@ export default function AdminPracticalAttendancePage() {
       if (!targetUser && selectedStudentId) {
         const u = users.find((item) => item.id === selectedStudentId);
         if (u) {
-          const expectedUserCode = generateUserUniquePracticalCode(u.id, selectedWeek, u.email);
-          const normExpected = normalizePracticalCode(expectedUserCode);
-          if (norm === normExpected || normExpected.endsWith(norm) || norm === normExpected.replace(`PRAC-W${selectedWeek}-`, "")) {
+          const code1 = normalizePracticalCode(generateUserUniquePracticalCode(u.id, selectedWeek, u.email));
+          const code2 = normalizePracticalCode(generateUserUniquePracticalCode(u.id, selectedWeek, ""));
+          const matches =
+            norm === code1 || code1.endsWith(norm) || norm === code1.replace(`PRAC-W${selectedWeek}-`, "") ||
+            norm === code2 || code2.endsWith(norm) || norm === code2.replace(`PRAC-W${selectedWeek}-`, "");
+
+          if (matches) {
             targetUser = u;
           } else {
             setError(`❌ Invalid Code! The code entered does NOT match ${u.firstName} ${u.lastName}'s unique Week ${selectedWeek} attendance code.`);
@@ -336,12 +353,11 @@ export default function AdminPracticalAttendancePage() {
       // 3. Direct lookup across all trainees in cohort using generateUserUniquePracticalCode
       if (!targetUser) {
         targetUser = users.find((u) => {
-          const expectedCode = generateUserUniquePracticalCode(u.id, selectedWeek, u.email);
-          const normExpected = normalizePracticalCode(expectedCode);
+          const code1 = normalizePracticalCode(generateUserUniquePracticalCode(u.id, selectedWeek, u.email));
+          const code2 = normalizePracticalCode(generateUserUniquePracticalCode(u.id, selectedWeek, ""));
           return (
-            norm === normExpected ||
-            normExpected.endsWith(norm) ||
-            norm === normExpected.replace(`PRAC-W${selectedWeek}-`, "")
+            norm === code1 || code1.endsWith(norm) || norm === code1.replace(`PRAC-W${selectedWeek}-`, "") ||
+            norm === code2 || code2.endsWith(norm) || norm === code2.replace(`PRAC-W${selectedWeek}-`, "")
           );
         });
       }

@@ -64,14 +64,20 @@ function TraineePracticalAttendanceContent() {
             if (gRes.ok) {
               const groupsData = await gRes.json();
               const groupsList = Array.isArray(groupsData) ? groupsData : groupsData?.groups || [];
+              const uEmail = uData.email || payload.email || "";
               const userGroup = groupsList.find((g: any) =>
-                Array.isArray(g.members) && g.members.some((m: any) => (m.id || m.userId) === currentUserId)
+                Array.isArray(g.members) && g.members.some((m: any) => 
+                  (m.id || m.userId || m.user?.id) === currentUserId || (uEmail && m.email === uEmail)
+                )
               );
 
               if (userGroup) {
                 setGroupId(userGroup.id);
                 setGroupName(userGroup.name);
                 setPracticalDay(userGroup.practicalDay || "Monday");
+              } else if (uData.groupName || uData.assignedGroup) {
+                const fallbackGroup = uData.groupName || uData.assignedGroup;
+                setGroupName(fallbackGroup);
               }
             }
           } catch {}

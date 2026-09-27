@@ -904,12 +904,18 @@ function TraineeDashboardContent() {
             const allGroups = await groupsRes.json();
             if (Array.isArray(allGroups)) {
               const userGroup = allGroups.find((g: any) =>
-                (g.members || []).some((m: any) => m.id === uid || m.userId === uid)
+                (g.members || []).some((m: any) => 
+                  m.id === uid || m.userId === uid || m.user?.id === uid || (user?.email && m.email === user.email)
+                )
               );
               if (userGroup) {
                 setGroupId(userGroup.id || "");
                 setGroupName(userGroup.name || "");
                 setPracticalDay(userGroup.practicalDay || getGroupPracticalDay(userGroup.name));
+              } else if (user?.groupName || (user as any)?.assignedGroup) {
+                const fallbackGroup = user?.groupName || (user as any)?.assignedGroup;
+                setGroupName(fallbackGroup);
+                setPracticalDay(getGroupPracticalDay(fallbackGroup));
               }
             }
           }
