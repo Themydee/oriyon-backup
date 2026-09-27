@@ -139,8 +139,12 @@ function TraineePracticalAttendanceContent() {
         // Fetch user practical checkins verified by admin from server
         const syncedCheckins = await fetchAndSyncUserPracticalCheckins(currentUserId);
         const checkinWeekNums = syncedCheckins
-          .filter((c) => c.userId === currentUserId)
-          .map((c) => c.weekNumber);
+          .filter((c) => {
+            const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
+            return cUid === currentUserId.toLowerCase();
+          })
+          .map((c) => Number(c.weekNumber))
+          .filter((w) => !isNaN(w));
         setCheckinWeeks(checkinWeekNums);
 
         const weekParam = searchParams?.get("week");

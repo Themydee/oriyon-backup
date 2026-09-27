@@ -229,8 +229,16 @@ export function clearStoredPracticalCheckins(cohortId?: string, weekNumber?: num
  * Gets checked-in week numbers for a trainee.
  */
 export function getUserPracticalCheckinWeeks(userId: string): number[] {
+  if (!userId) return [];
+  const uIdNorm = String(userId).trim().toLowerCase();
   const checkins = getStoredPracticalCheckins();
-  return checkins.filter((c) => c.userId === userId).map((c) => c.weekNumber);
+  return checkins
+    .filter((c) => {
+      const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
+      return cUid === uIdNorm;
+    })
+    .map((c) => Number(c.weekNumber))
+    .filter((w) => !isNaN(w));
 }
 
 /**
@@ -238,7 +246,7 @@ export function getUserPracticalCheckinWeeks(userId: string): number[] {
  */
 export function isPracticalWeekCompleted(userId: string, weekNumber: number): boolean {
   const weeks = getUserPracticalCheckinWeeks(userId);
-  return weeks.includes(weekNumber);
+  return weeks.includes(Number(weekNumber));
 }
 
 /**
@@ -247,15 +255,31 @@ export function isPracticalWeekCompleted(userId: string, weekNumber: number): bo
  */
 export async function fetchAndSyncUserPracticalCheckins(userId: string): Promise<PracticalCheckin[]> {
   if (!userId) return getStoredPracticalCheckins();
+  const uIdNorm = String(userId).trim().toLowerCase();
+
   try {
     const res = await authFetch(`/lms/practical/checkins/user/${userId}`);
     if (res.ok) {
       const serverCheckins = await res.json();
-      const list: PracticalCheckin[] = Array.isArray(serverCheckins)
+      const rawList: any[] = Array.isArray(serverCheckins)
         ? serverCheckins
         : Array.isArray(serverCheckins?.checkins)
         ? serverCheckins.checkins
+        : Array.isArray(serverCheckins?.data)
+        ? serverCheckins.data
         : [];
+      
+      const list: PracticalCheckin[] = rawList.map((c) => ({
+        id: c.id || `chk-${c.weekNumber}-${userId}`,
+        cohortId: c.cohortId || c.cohort_id || "",
+        groupId: c.groupId || c.group_id || "",
+        userId: c.userId || c.user_id || userId,
+        weekNumber: Number(c.weekNumber),
+        codeSubmitted: c.codeSubmitted || c.code_submitted || "",
+        checkedInAt: c.checkedInAt || c.created_at || new Date().toISOString(),
+        verifiedBy: c.verifiedBy || c.verified_by,
+      }));
+
       if (list.length > 0) {
         list.forEach((c) => saveStoredPracticalCheckin(c));
       }
@@ -264,6 +288,10 @@ export async function fetchAndSyncUserPracticalCheckins(userId: string): Promise
   } catch (err) {
     console.warn("Failed to sync user practical checkins from server", err);
   }
-  return getStoredPracticalCheckins().filter((c) => c.userId === userId);
+
+  return getStoredPracticalCheckins().filter((c) => {
+    const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
+    return cUid === uIdNorm;
+  });
 }
 
