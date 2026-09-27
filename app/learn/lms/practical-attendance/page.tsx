@@ -11,6 +11,7 @@ import {
   fetchAndSyncUserPracticalCheckins,
   isTodayGroupPracticalDay,
 } from "@/lib/practicalData";
+import { getGroupPracticalDay } from "@/lib/sitesData";
 
 const API_BASE = getApiBase();
 
@@ -59,28 +60,80 @@ function TraineePracticalAttendanceContent() {
           const cId = uData.cohortId || payload.cohortId || "cohort-1";
           setCohortId(cId);
 
+          let foundUserGroup: any = null;
+          const uEmail = uData.email || payload.email || "";
+
+          const isUserInGroup = (g: any) => {
+            if (!g) return false;
+            const members = Array.isArray(g.members) ? g.members : Array.isArray(g.memberIds) ? g.memberIds : Array.isArray(g.users) ? g.users : [];
+            return members.some((m: any) => {
+              if (!m) return false;
+              if (typeof m === "string") {
+                const s = m.trim().toLowerCase();
+                return (currentUserId && s === currentUserId.toLowerCase()) || (uEmail && s === uEmail.toLowerCase());
+              }
+              if (typeof m === "object") {
+                const mId = String(m.id || m.userId || m.user_id || m.memberId || m.traineeId || m._id || m.user?.id || m.user?._id || "").trim().toLowerCase();
+                const mEmail = String(m.email || m.user?.email || "").trim().toLowerCase();
+                if (currentUserId && mId && mId === currentUserId.toLowerCase()) return true;
+                if (uEmail && mEmail && mEmail === uEmail.toLowerCase()) return true;
+              }
+              return false;
+            });
+          };
+
+          // Tier 1: Check groups list of current cohort
           try {
             const gRes = await authFetch(`/cohorts/${cId}/groups`);
             if (gRes.ok) {
               const groupsData = await gRes.json();
               const groupsList = Array.isArray(groupsData) ? groupsData : groupsData?.groups || [];
-              const uEmail = uData.email || payload.email || "";
-              const userGroup = groupsList.find((g: any) =>
-                Array.isArray(g.members) && g.members.some((m: any) => 
-                  (m.id || m.userId || m.user?.id) === currentUserId || (uEmail && m.email === uEmail)
-                )
-              );
-
-              if (userGroup) {
-                setGroupId(userGroup.id);
-                setGroupName(userGroup.name);
-                setPracticalDay(userGroup.practicalDay || "Monday");
-              } else if (uData.groupName || uData.assignedGroup) {
-                const fallbackGroup = uData.groupName || uData.assignedGroup;
-                setGroupName(fallbackGroup);
-              }
+              foundUserGroup = groupsList.find(isUserInGroup);
             }
           } catch {}
+
+          // Tier 2: Search across ALL cohorts' groups if not found
+          if (!foundUserGroup) {
+            try {
+              const cRes = await authFetch(`/cohorts`);
+              if (cRes.ok) {
+                const cohortsList = await cRes.json();
+                if (Array.isArray(cohortsList)) {
+                  for (const c of cohortsList) {
+                    const gRes = await authFetch(`/cohorts/${c.id}/groups`);
+                    if (gRes.ok) {
+                      const gList = await gRes.json();
+                      const groupsList = Array.isArray(gList) ? gList : gList?.groups || [];
+                      const matchG = groupsList.find(isUserInGroup);
+                      if (matchG) {
+                        foundUserGroup = matchG;
+                        setCohortId(c.id);
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+
+          // Tier 3: Direct properties on user profile or token
+          const directGroupName =
+            uData.groupName ||
+            uData.assignedGroup ||
+            uData.group?.name ||
+            (Array.isArray(uData.userGroups) && uData.userGroups.length > 0 ? uData.userGroups[0]?.group?.name || uData.userGroups[0]?.name : null) ||
+            payload.groupName ||
+            payload.assignedGroup;
+
+          if (foundUserGroup) {
+            setGroupId(foundUserGroup.id);
+            setGroupName(foundUserGroup.name);
+            setPracticalDay(foundUserGroup.practicalDay || getGroupPracticalDay(foundUserGroup.name));
+          } else if (directGroupName) {
+            setGroupName(directGroupName);
+            setPracticalDay(getGroupPracticalDay(directGroupName));
+          }
         }
 
         // Fetch user practical checkins verified by admin from server

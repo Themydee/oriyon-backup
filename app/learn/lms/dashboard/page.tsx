@@ -898,27 +898,79 @@ function TraineeDashboardContent() {
           }
         }
 
+        let foundUserGroup: any = null;
+        const uEmail = user.email || payload.email || "";
+
+        const isUserInGroup = (g: any) => {
+          if (!g) return false;
+          const members = Array.isArray(g.members) ? g.members : Array.isArray(g.memberIds) ? g.memberIds : Array.isArray(g.users) ? g.users : [];
+          return members.some((m: any) => {
+            if (!m) return false;
+            if (typeof m === "string") {
+              const s = m.trim().toLowerCase();
+              return (uid && s === uid.toLowerCase()) || (uEmail && s === uEmail.toLowerCase());
+            }
+            if (typeof m === "object") {
+              const mId = String(m.id || m.userId || m.user_id || m.memberId || m.traineeId || m._id || m.user?.id || m.user?._id || "").trim().toLowerCase();
+              const mEmail = String(m.email || m.user?.email || "").trim().toLowerCase();
+              if (uid && mId && mId === uid.toLowerCase()) return true;
+              if (uEmail && mEmail && mEmail === uEmail.toLowerCase()) return true;
+            }
+            return false;
+          });
+        };
+
         if (resolvedCohort) {
-          const groupsRes = await authFetch(`/cohorts/${resolvedCohort}/groups`);
-          if (groupsRes.ok) {
-            const allGroups = await groupsRes.json();
-            if (Array.isArray(allGroups)) {
-              const userGroup = allGroups.find((g: any) =>
-                (g.members || []).some((m: any) => 
-                  m.id === uid || m.userId === uid || m.user?.id === uid || (user?.email && m.email === user.email)
-                )
-              );
-              if (userGroup) {
-                setGroupId(userGroup.id || "");
-                setGroupName(userGroup.name || "");
-                setPracticalDay(userGroup.practicalDay || getGroupPracticalDay(userGroup.name));
-              } else if (user?.groupName || (user as any)?.assignedGroup) {
-                const fallbackGroup = user?.groupName || (user as any)?.assignedGroup;
-                setGroupName(fallbackGroup);
-                setPracticalDay(getGroupPracticalDay(fallbackGroup));
+          try {
+            const groupsRes = await authFetch(`/cohorts/${resolvedCohort}/groups`);
+            if (groupsRes.ok) {
+              const allGroups = await groupsRes.json();
+              if (Array.isArray(allGroups)) {
+                foundUserGroup = allGroups.find(isUserInGroup);
               }
             }
-          }
+          } catch {}
+        }
+
+        // If not found in resolvedCohort, search across ALL cohorts
+        if (!foundUserGroup) {
+          try {
+            const cohortsList = cohortRes.ok ? await cohortRes.clone().json() : [];
+            if (Array.isArray(cohortsList)) {
+              for (const c of cohortsList) {
+                const gRes = await authFetch(`/cohorts/${c.id}/groups`);
+                if (gRes.ok) {
+                  const cGroups = await gRes.json();
+                  if (Array.isArray(cGroups)) {
+                    const matchG = cGroups.find(isUserInGroup);
+                    if (matchG) {
+                      foundUserGroup = matchG;
+                      setCohortId(c.id);
+                      setCohortName(c.name || "Cohort");
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+
+        const directGroupName =
+          user.groupName ||
+          (user as any).assignedGroup ||
+          user.group?.name ||
+          (Array.isArray(user.userGroups) && user.userGroups.length > 0 ? user.userGroups[0]?.group?.name || user.userGroups[0]?.name : null) ||
+          payload.groupName ||
+          payload.assignedGroup;
+
+        if (foundUserGroup) {
+          setGroupId(foundUserGroup.id || "");
+          setGroupName(foundUserGroup.name || "");
+          setPracticalDay(foundUserGroup.practicalDay || getGroupPracticalDay(foundUserGroup.name));
+        } else if (directGroupName) {
+          setGroupName(directGroupName);
+          setPracticalDay(getGroupPracticalDay(directGroupName));
         }
 
         if (weeksRes.ok) {

@@ -24,6 +24,10 @@ interface UserProfileData {
   desiredRoleOption1?: string;
   memberId?: string;
   specialization?: string;
+  groupName?: string;
+  group?: { id?: string; name?: string };
+  assignedGroup?: string;
+  userGroups?: any[];
 }
 
 function ProfileContent() {
@@ -141,21 +145,74 @@ function ProfileContent() {
       } catch {}
 
       // Resolve Group
-      let resolvedGroupName = "Group A";
+      let resolvedGroupName =
+        data.groupName ||
+        (data as any).assignedGroup ||
+        data.group?.name ||
+        (Array.isArray((data as any).userGroups) && (data as any).userGroups.length > 0 ? (data as any).userGroups[0]?.group?.name || (data as any).userGroups[0]?.name : null) ||
+        payload.groupName ||
+        payload.assignedGroup ||
+        "";
+
+      const userEmail = data.email || payload.email || "";
+
+      const isUserInGroup = (g: any) => {
+        if (!g) return false;
+        const members = Array.isArray(g.members) ? g.members : Array.isArray(g.memberIds) ? g.memberIds : Array.isArray(g.users) ? g.users : [];
+        return members.some((m: any) => {
+          if (!m) return false;
+          if (typeof m === "string") {
+            const s = m.trim().toLowerCase();
+            return (uid && s === uid.toLowerCase()) || (userEmail && s === userEmail.toLowerCase());
+          }
+          if (typeof m === "object") {
+            const mId = String(m.id || m.userId || m.user_id || m.memberId || m.traineeId || m._id || m.user?.id || m.user?._id || "").trim().toLowerCase();
+            const mEmail = String(m.email || m.user?.email || "").trim().toLowerCase();
+            if (uid && mId && mId === uid.toLowerCase()) return true;
+            if (userEmail && mEmail && mEmail === userEmail.toLowerCase()) return true;
+          }
+          return false;
+        });
+      };
+
       if (resolvedCohortId) {
         try {
           const groupRes = await authFetch(`/cohorts/${resolvedCohortId}/groups`);
           if (groupRes.ok) {
             const groups = await groupRes.json();
             if (Array.isArray(groups)) {
-              const match = groups.find((g: any) =>
-                (g.members || []).some((m: any) => m.id === uid || m.userId === uid)
-              );
+              const match = groups.find(isUserInGroup);
               if (match && match.name) resolvedGroupName = match.name;
             }
           }
         } catch {}
       }
+
+      if (!resolvedGroupName) {
+        try {
+          const allCRes = await authFetch(`/cohorts`);
+          if (allCRes.ok) {
+            const allC = await allCRes.json();
+            if (Array.isArray(allC)) {
+              for (const c of allC) {
+                const gRes = await authFetch(`/cohorts/${c.id}/groups`);
+                if (gRes.ok) {
+                  const groups = await gRes.json();
+                  if (Array.isArray(groups)) {
+                    const match = groups.find(isUserInGroup);
+                    if (match && match.name) {
+                      resolvedGroupName = match.name;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (!resolvedGroupName) resolvedGroupName = "Group A";
 
       // Resolve Coop, LGA, State
       let coopName = "Oriyon Coop";
