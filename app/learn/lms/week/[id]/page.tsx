@@ -354,7 +354,7 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
               Week {week.weekNumber} Practical Attendance
             </h3>
             <p className="text-xs text-emerald-200/80 mt-1 max-w-md font-medium">
-              You must complete practical attendance for Week {week.weekNumber} to unlock Week {week.weekNumber + 1} online modules.
+              View or check in your practical attendance code for Week {week.weekNumber} field session.
             </p>
           </div>
           <Link
@@ -1113,10 +1113,8 @@ export default function WeekPage() {
           }
         }
 
-        // Fetch & verify user practical check-in for this week
-        const userCheckins = await fetchAndSyncUserPracticalCheckins(payload.userId);
-        const isPresentForWeek = isStaff || userCheckins.some((c: any) => Number(c.weekNumber) === Number(weekData.weekNumber));
-        setIsPracticalPresent(isPresentForWeek);
+        // Attendance no longer blocks quiz taking
+        setIsPracticalPresent(true);
       } catch {
         setError("Failed to load week.");
       } finally {
@@ -1287,14 +1285,10 @@ export default function WeekPage() {
           );
         })}
 
-        {/* Quiz entry — only displays when all lessons are completed AND practical attendance is verified */}
-        {quiz && allDone && isPracticalPresent && (
+        {/* Quiz entry — displays when all lessons are completed */}
+        {quiz && allDone && (
           <button
             onClick={() => {
-              if (!isPracticalPresent) {
-                alert(`⚠️ Practical Attendance Required: You must be marked present by your trainer for Week ${week?.weekNumber} practical session before taking this quiz.`);
-                return;
-              }
               setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz");
             }}
             className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-all relative ${
@@ -1302,24 +1296,18 @@ export default function WeekPage() {
             }`}>
             {showQuiz && <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-yellow-400" />}
             <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-black ${
-              !isPracticalPresent
-                ? "bg-amber-100 text-amber-800 border border-amber-300"
-                : quizPassed
+              quizPassed
                 ? "bg-green-50 text-green-600 border border-green-200"
                 : "bg-yellow-50 text-yellow-600 border border-yellow-250"
             }`}>
-              {!isPracticalPresent ? "🔒" : quizPassed ? "✓" : "?"}
+              {quizPassed ? "✓" : "?"}
             </div>
             <div className="flex-1 min-w-0">
               <p className={`text-xs font-semibold leading-snug ${showQuiz ? "text-yellow-800 font-bold" : "text-slate-600"}`}>
                 {quiz.title}
               </p>
-              <span className={`text-[10px] font-medium block mt-0.5 ${!isPracticalPresent ? "text-amber-700 font-bold" : "text-yellow-600"}`}>
-                {!isPracticalPresent
-                  ? "🔒 Practical Attendance Required"
-                  : quizPassed
-                  ? "✅ Passed"
-                  : `Pass 70% to unlock next week`}
+              <span className="text-[10px] font-medium block mt-0.5 text-yellow-600">
+                {quizPassed ? "✅ Passed" : "Pass 70% to unlock next week"}
               </span>
             </div>
           </button>
@@ -1342,24 +1330,10 @@ export default function WeekPage() {
           </Link>
         )}
         {allDone && quiz && !quizPassed && (
-          !isPracticalPresent ? (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center space-y-1.5 font-sora">
-              <p className="text-xs font-bold text-amber-900 flex items-center justify-center gap-1">
-                <span>🔒</span> Practical Attendance Required
-              </p>
-              <p className="text-[10px] text-amber-700 font-medium">
-                Marked present required before taking this quiz.
-              </p>
-              <Link href="/learn/lms/practical-attendance" className="block text-[10px] font-extrabold text-emerald-800 underline">
-                View Attendance Code →
-              </Link>
-            </div>
-          ) : (
-            <button onClick={() => { setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz"); }}
-              className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-black text-sm py-3 rounded-xl transition cursor-pointer">
-              📝 Take the Quiz
-            </button>
-          )
+          <button onClick={() => { setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz"); }}
+            className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-black text-sm py-3 rounded-xl transition cursor-pointer">
+            📝 Take the Quiz
+          </button>
         )}
         {!allDone && (
           <p className="text-slate-400 text-[11px] text-center font-semibold">
@@ -1411,25 +1385,10 @@ export default function WeekPage() {
         </aside>
         <main className="flex-1 overflow-hidden bg-transparent">
           {showQuiz && quiz ? (
-            !isPracticalPresent ? (
-              <div className="flex flex-col items-center justify-center h-full p-8 text-center font-sora bg-white rounded-2xl border border-slate-200">
-                <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center text-3xl mb-4 border border-amber-200">
-                  🔒
-                </div>
-                <h2 className="text-xl font-black text-slate-900 mb-2">Practical Attendance Required</h2>
-                <p className="text-xs text-slate-600 max-w-md mb-6 leading-relaxed">
-                  You must attend the <strong>Week {week?.weekNumber}</strong> field practical session and be marked present by your trainer or admin before taking this quiz.
-                </p>
-                <Link href="/learn/lms/practical-attendance" className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs">
-                  📱 View My Practical Attendance Code →
-                </Link>
-              </div>
-            ) : (
-              <QuizPanel
-                quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
-                onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
-              />
-            )
+            <QuizPanel
+              quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
+              onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
+            />
           ) : viewingOverview ? (
             <OverviewPanel
               week={week}
