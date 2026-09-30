@@ -149,16 +149,24 @@ function parseLessonBody(text: string): Block[] {
       flushTable();
     }
 
-    if (line.startsWith("•")) {
-      currentList.push(line.substring(1).trim());
+    if (trimmed.startsWith("#") || trimmed.startsWith("📌")) {
+      flushList();
+      flushTable();
+      const text = trimmed.replace(/^#+\s*/, "").replace(/^📌\s*/, "");
+      blocks.push({ type: "heading", text });
+      continue;
+    }
+
+    if (trimmed.startsWith("•") || trimmed.startsWith("- ") || trimmed.startsWith("* ") || /^\d+\.\s/.test(trimmed)) {
+      flushTable();
+      const text = trimmed.replace(/^[•\-\*]\s*/, "").replace(/^\d+\.\s*/, "");
+      currentList.push(text);
       continue;
     } else {
       flushList();
     }
 
-    if (line.startsWith("📌")) {
-      blocks.push({ type: "heading", text: line.substring(1).trim() });
-    } else if (line === "") {
+    if (line === "") {
       blocks.push({ type: "spacer" });
     } else {
       blocks.push({ type: "paragraph", text: line });
@@ -824,16 +832,18 @@ function LessonPanel({ lesson, index, total, isDone, nextUnlocked, onComplete, o
     if (!el) return;
     
     const checkScroll = () => {
-      if (!lesson.body || lesson.body.trim() === "") {
-        setScrollPct(0);
-        if (!hasAudio) setCanComplete(false);
+      const rawBody = lesson.body || (lesson as any).content || (lesson as any).text || "";
+      const effectiveBody = (rawBody && rawBody.trim() !== "") ? rawBody : (lesson.description || "");
+
+      if (!effectiveBody || effectiveBody.trim() === "") {
+        setScrollPct(100);
+        if (!hasAudio) setCanComplete(true);
         return;
       }
       const { scrollTop, scrollHeight, clientHeight } = el;
       const pct = scrollHeight <= clientHeight ? 100 : Math.round((scrollTop / (scrollHeight - clientHeight)) * 100);
       setScrollPct(pct);
 
-      // If lesson has audio, completion is ONLY unlocked when audio finishes!
       if (!hasAudio && pct >= 95) {
         setCanComplete(true);
       }
@@ -1010,10 +1020,15 @@ function LessonPanel({ lesson, index, total, isDone, nextUnlocked, onComplete, o
                 )}
               </div>
             )}
-            {lesson.body && lesson.body.trim() !== ""
-              ? <LessonBody body={lesson.body} />
-              : <p className="text-slate-400 text-sm">No content yet.</p>
-            }
+            {(() => {
+              const rawBody = lesson.body || (lesson as any).content || (lesson as any).text || "";
+              const effectiveBody = (rawBody && rawBody.trim() !== "") ? rawBody : (lesson.description || "");
+              return effectiveBody && effectiveBody.trim() !== "" ? (
+                <LessonBody body={effectiveBody} />
+              ) : (
+                <p className="text-slate-400 text-sm">No content available for this lesson yet.</p>
+              );
+            })()}
             <div className="h-8" />
           </>
         )}
@@ -1298,11 +1313,12 @@ export default function WeekPage() {
     </div>
   );
 
-  const lessons    = [...(week.lessons ?? [])].sort((a, b) => a.order - b.order);
-  const doneMods   = lessons.map((l) => completedIds.has(l.id));
-  const allDone    = lessons.length > 0 && lessons.every((l) => completedIds.has(l.id));
-  const pct        = lessons.length ? Math.round((completedIds.size / lessons.length) * 100) : 0;
-  const activeLesson0 = lessons[activeLesson];
+  const lessons            = [...(week.lessons ?? [])].sort((a, b) => a.order - b.order);
+  const doneMods           = lessons.map((l) => completedIds.has(l.id));
+  const weekCompletedCount = lessons.filter((l) => completedIds.has(l.id)).length;
+  const allDone            = lessons.length > 0 && weekCompletedCount === lessons.length;
+  const pct                = lessons.length ? Math.min(100, Math.round((weekCompletedCount / lessons.length) * 100)) : 0;
+  const activeLesson0      = lessons[activeLesson];
 
   const WeekSidebar = () => (
     <div className="flex flex-col h-full overflow-hidden bg-white border-r border-slate-200/80">
@@ -1316,7 +1332,7 @@ export default function WeekPage() {
           <p className="text-slate-500 text-xs line-clamp-2 mb-3 font-medium">{week.description}</p>
         )}
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs text-slate-400 font-medium">{completedIds.size}/{lessons.length} lessons</span>
+          <span className="text-xs text-slate-400 font-medium">{weekCompletedCount}/{lessons.length} lessons</span>
           <span className="ml-auto text-xs font-black text-green-600">{pct}%</span>
         </div>
         <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
@@ -1426,7 +1442,7 @@ export default function WeekPage() {
               <span className={`text-[10px] font-medium block mt-0.5 ${
                 quizPassed ? "text-green-600" : allDone ? "text-amber-700 font-bold" : "text-slate-400"
               }`}>
-                {quizPassed ? "✅ Passed" : allDone ? "📝 Take Quiz Now" : `🔒 Complete lessons first (${completedIds.size}/${lessons.length})`}
+                {quizPassed ? "✅ Passed" : allDone ? "📝 Take Quiz Now" : `🔒 Complete lessons first (${weekCompletedCount}/${lessons.length})`}
               </span>
             </div>
           </button>
@@ -1457,12 +1473,12 @@ export default function WeekPage() {
         {!allDone && quiz && (
           <button onClick={() => { setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz"); }}
             className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-3 rounded-xl transition cursor-pointer">
-            🔒 Quiz Locked ({completedIds.size}/{lessons.length})
+            🔒 Quiz Locked ({weekCompletedCount}/{lessons.length})
           </button>
         )}
         {!allDone && !quiz && (
           <p className="text-slate-400 text-[11px] text-center font-semibold">
-            {lessons.length - completedIds.size} lesson{lessons.length - completedIds.size !== 1 ? "s" : ""} remaining
+            {lessons.length - weekCompletedCount} lesson{lessons.length - weekCompletedCount !== 1 ? "s" : ""} remaining
           </p>
         )}
       </div>
@@ -1513,7 +1529,7 @@ export default function WeekPage() {
             allDone ? (
               <QuizPanel
                 quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
-                allDone={allDone} completedCount={completedIds.size} totalCount={lessons.length}
+                allDone={allDone} completedCount={weekCompletedCount} totalCount={lessons.length}
                 onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
               />
             ) : (
@@ -1525,7 +1541,7 @@ export default function WeekPage() {
                 <p className="text-slate-500 text-sm max-w-md mb-6 leading-relaxed font-medium">
                   You must complete all lessons in <strong>Week {week.weekNumber}</strong> before taking this quiz.
                   <br />
-                  <span className="font-bold text-slate-700">({completedIds.size} of {lessons.length} lessons completed)</span>
+                  <span className="font-bold text-slate-700">({weekCompletedCount} of {lessons.length} lessons completed)</span>
                 </p>
                 <button
                   onClick={() => {
@@ -1544,7 +1560,7 @@ export default function WeekPage() {
           ) : viewingOverview ? (
             <OverviewPanel
               week={week}
-              completedCount={completedIds.size}
+              completedCount={weekCompletedCount}
               totalCount={lessons.length}
               nextUnlockedLessonIndex={lessons.findIndex((l) => !completedIds.has(l.id)) === -1 ? 0 : lessons.findIndex((l) => !completedIds.has(l.id))}
               quiz={quiz}
@@ -1601,7 +1617,7 @@ export default function WeekPage() {
           {mobilePanel === "overview" && (
             <OverviewPanel
               week={week}
-              completedCount={completedIds.size}
+              completedCount={weekCompletedCount}
               totalCount={lessons.length}
               nextUnlockedLessonIndex={lessons.findIndex((l) => !completedIds.has(l.id)) === -1 ? 0 : lessons.findIndex((l) => !completedIds.has(l.id))}
               quiz={quiz}
@@ -1651,7 +1667,7 @@ export default function WeekPage() {
             allDone ? (
               <QuizPanel
                 quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
-                allDone={allDone} completedCount={completedIds.size} totalCount={lessons.length}
+                allDone={allDone} completedCount={weekCompletedCount} totalCount={lessons.length}
                 onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
               />
             ) : (
@@ -1663,7 +1679,7 @@ export default function WeekPage() {
                 <p className="text-slate-500 text-sm max-w-md mb-6 leading-relaxed font-medium">
                   You must complete all lessons in <strong>Week {week.weekNumber}</strong> before taking this quiz.
                   <br />
-                  <span className="font-bold text-slate-700">({completedIds.size} of {lessons.length} lessons completed)</span>
+                  <span className="font-bold text-slate-700">({weekCompletedCount} of {lessons.length} lessons completed)</span>
                 </p>
                 <button
                   onClick={() => {
