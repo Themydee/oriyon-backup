@@ -245,9 +245,9 @@ function LessonBody({ body }: { body: string }) {
   );
 }
 
-function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonIndex, quiz, quizPassed, allDone, onStartLesson, onOpenQuiz, onOpenReadingModal }: {
+function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonIndex, quiz, quizPassed, quizAttempted, allDone, onStartLesson, onOpenQuiz, onOpenReadingModal }: {
   week: Week; completedCount: number; totalCount: number; nextUnlockedLessonIndex: number;
-  quiz?: Quiz | null; quizPassed?: boolean; allDone?: boolean;
+  quiz?: Quiz | null; quizPassed?: boolean; quizAttempted?: boolean; allDone?: boolean;
   onStartLesson: (idx: number) => void; onOpenQuiz?: () => void; onOpenReadingModal: (reading: any) => void;
 }) {
   const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -300,6 +300,8 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
         <div className={`rounded-2xl p-5 mb-8 border shadow-sm font-sora flex items-center justify-between gap-4 flex-wrap ${
           quizPassed
             ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+            : quizAttempted
+            ? "bg-amber-50 border-amber-300 text-amber-950"
             : allDone
             ? "bg-gradient-to-r from-teal-900 via-emerald-950 to-[#002d25] text-white border-emerald-700 shadow-md"
             : "bg-slate-50 border-slate-200 text-slate-800"
@@ -310,21 +312,25 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
               <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full ${
                 quizPassed
                   ? "bg-emerald-200/60 text-emerald-900 border border-emerald-300"
+                  : quizAttempted
+                  ? "bg-amber-200/70 text-amber-950 border border-amber-300"
                   : allDone
                   ? "bg-[#00D1C1] text-[#002d25] font-extrabold"
                   : "bg-slate-200 text-slate-600"
               }`}>
-                {quizPassed ? "Quiz Passed ✅" : allDone ? "Quiz Unlocked 🔓" : "Quiz Locked 🔒"}
+                {quizPassed ? "Quiz Passed ✅" : quizAttempted ? "Not Passed ❌" : allDone ? "Quiz Pending ⏳" : "Quiz Locked 🔒"}
               </span>
             </div>
-            <h3 className={`text-base md:text-lg font-black ${allDone && !quizPassed ? "text-white" : "text-[#002d25]"}`}>
+            <h3 className={`text-base md:text-lg font-black ${allDone && !quizPassed && !quizAttempted ? "text-white" : "text-[#002d25]"}`}>
               {quiz.title || `Week ${week.weekNumber} Assessment Quiz`}
             </h3>
-            <p className={`text-xs font-medium ${allDone && !quizPassed ? "text-emerald-200/90" : "text-slate-500"}`}>
+            <p className={`text-xs font-medium ${allDone && !quizPassed && !quizAttempted ? "text-emerald-200/90" : "text-slate-500"}`}>
               {quizPassed
                 ? "You scored 70%+ on this weekly quiz."
+                : quizAttempted
+                ? "Your previous score was under 70%. Retake the quiz to improve your score."
                 : allDone
-                ? "All lessons completed! Pass 70% on this quiz to confirm your understanding."
+                ? "All lessons completed! Take this quiz to test your understanding."
                 : `Complete all lessons (${completedCount}/${totalCount}) to unlock the quiz.`}
             </p>
           </div>
@@ -335,10 +341,12 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
               className={`px-5 py-2.5 rounded-xl text-xs font-black transition cursor-pointer shadow-sm uppercase tracking-wider ${
                 quizPassed
                   ? "bg-emerald-700 hover:bg-emerald-800 text-white"
+                  : quizAttempted
+                  ? "bg-amber-600 hover:bg-amber-700 text-white"
                   : "bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25]"
               }`}
             >
-              {quizPassed ? "Review Quiz Results →" : "Take Weekly Quiz Now →"}
+              {quizPassed ? "Review Quiz Results →" : quizAttempted ? "Retake Weekly Quiz →" : "Take Weekly Quiz Now →"}
             </button>
           ) : (
             <button
@@ -437,8 +445,9 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
 }
 
 // ─── Quiz Panel ───────────────────────────────────────────────────────────────
-function QuizPanel({ quiz, userId, weekId, cohortId, onPassed }: {
+function QuizPanel({ quiz, userId, weekId, cohortId, onPassed, allDone = true, completedCount = 0, totalCount = 0 }: {
   quiz: Quiz; userId: string; weekId: string; cohortId: string; onPassed: () => void;
+  allDone?: boolean; completedCount?: number; totalCount?: number;
 }) {
   const [answers, setAnswers]     = useState<Record<string, number>>({});
   const [result, setResult]       = useState<{ score: number; passed: boolean; correct: number; total: number } | null>(null);
@@ -451,6 +460,10 @@ function QuizPanel({ quiz, userId, weekId, cohortId, onPassed }: {
   const effectiveCohortId = cohortId || (quiz as any)?.cohortId || "";
 
   const submit = async () => {
+    if (!allDone) {
+      setError("You must complete all lessons in this week before taking the quiz.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -1500,6 +1513,7 @@ export default function WeekPage() {
             allDone ? (
               <QuizPanel
                 quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
+                allDone={allDone} completedCount={completedIds.size} totalCount={lessons.length}
                 onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
               />
             ) : (
@@ -1637,6 +1651,7 @@ export default function WeekPage() {
             allDone ? (
               <QuizPanel
                 quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
+                allDone={allDone} completedCount={completedIds.size} totalCount={lessons.length}
                 onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
               />
             ) : (

@@ -1171,10 +1171,10 @@ function TraineeDashboardContent() {
     const prevWeek = weeks[index - 1];
     if (!prevWeek) return true;
 
+    // Completing the previous week's online lessons unlocks the next week.
+    // The weekly quiz remains as "Pending" until the user attempts & passes it.
     const prevOnlineDone = isWeekComplete(prevWeek);
-    const prevQuizDone = !prevWeek.requiresQuizPass || passedWeekIds.has(prevWeek.id);
-
-    return prevOnlineDone && prevQuizDone;
+    return prevOnlineDone;
   };
 
   const completedWeeks   = useMemo(() => (Array.isArray(weeks) ? weeks : []).filter(isWeekComplete).length, [weeks, progress]);
