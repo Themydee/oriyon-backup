@@ -50,6 +50,7 @@ interface Quiz {
   title: string;
   questions: Question[];
   passingScore: number;
+  isPublished?: boolean;
 }
 
 interface Exam {
@@ -244,8 +245,10 @@ function LessonBody({ body }: { body: string }) {
   );
 }
 
-function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonIndex, onStartLesson, onOpenReadingModal }: {
-  week: Week; completedCount: number; totalCount: number; nextUnlockedLessonIndex: number; onStartLesson: (idx: number) => void; onOpenReadingModal: (reading: any) => void;
+function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonIndex, quiz, quizPassed, allDone, onStartLesson, onOpenQuiz, onOpenReadingModal }: {
+  week: Week; completedCount: number; totalCount: number; nextUnlockedLessonIndex: number;
+  quiz?: Quiz | null; quizPassed?: boolean; allDone?: boolean;
+  onStartLesson: (idx: number) => void; onOpenQuiz?: () => void; onOpenReadingModal: (reading: any) => void;
 }) {
   const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const weekReadings = getStoredReadings().filter((r) => r.recommendedWeek === week.weekNumber);
@@ -289,6 +292,62 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* WEEKLY QUIZ CARD IN OVERVIEW */}
+      {quiz && (
+        <div className={`rounded-2xl p-5 mb-8 border shadow-sm font-sora flex items-center justify-between gap-4 flex-wrap ${
+          quizPassed
+            ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+            : allDone
+            ? "bg-gradient-to-r from-teal-900 via-emerald-950 to-[#002d25] text-white border-emerald-700 shadow-md"
+            : "bg-slate-50 border-slate-200 text-slate-800"
+        }`}>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📝</span>
+              <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full ${
+                quizPassed
+                  ? "bg-emerald-200/60 text-emerald-900 border border-emerald-300"
+                  : allDone
+                  ? "bg-[#00D1C1] text-[#002d25] font-extrabold"
+                  : "bg-slate-200 text-slate-600"
+              }`}>
+                {quizPassed ? "Quiz Passed ✅" : allDone ? "Quiz Unlocked 🔓" : "Quiz Locked 🔒"}
+              </span>
+            </div>
+            <h3 className={`text-base md:text-lg font-black ${allDone && !quizPassed ? "text-white" : "text-[#002d25]"}`}>
+              {quiz.title || `Week ${week.weekNumber} Assessment Quiz`}
+            </h3>
+            <p className={`text-xs font-medium ${allDone && !quizPassed ? "text-emerald-200/90" : "text-slate-500"}`}>
+              {quizPassed
+                ? "You scored 70%+ on this weekly quiz."
+                : allDone
+                ? "All lessons completed! Pass 70% on this quiz to confirm your understanding."
+                : `Complete all lessons (${completedCount}/${totalCount}) to unlock the quiz.`}
+            </p>
+          </div>
+
+          {allDone ? (
+            <button
+              onClick={onOpenQuiz}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black transition cursor-pointer shadow-sm uppercase tracking-wider ${
+                quizPassed
+                  ? "bg-emerald-700 hover:bg-emerald-800 text-white"
+                  : "bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25]"
+              }`}
+            >
+              {quizPassed ? "Review Quiz Results →" : "Take Weekly Quiz Now →"}
+            </button>
+          ) : (
+            <button
+              onClick={onOpenQuiz}
+              className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+            >
+              View Quiz Status 🔒
+            </button>
+          )}
         </div>
       )}
 
@@ -341,8 +400,6 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
           </div>
         </div>
       </div>
-
-
 
       {week.weekNumber <= 11 && (
         <div className="bg-gradient-to-r from-emerald-900 to-teal-950 text-white rounded-2xl p-5 mb-8 border border-emerald-800 shadow-md flex items-center justify-between gap-4 flex-wrap">
@@ -1082,35 +1139,80 @@ export default function WeekPage() {
         const progressRes = await authFetch(`/lms/progress/${payload.userId}`);
         if (progressRes.ok) {
           const progressData = await progressRes.json();
-          const ids = new Set<string>(
-            Array.isArray(progressData)
-              ? progressData
-                  .filter((p: any) => p.completed && p.weekId === weekId)
-                  .map((p: any) => p.lessonId)
-              : []
-          );
+          const progressArr = Array.isArray(progressData)
+            ? progressData
+            : Array.isArray(progressData?.data)
+            ? progressData.data
+            : Array.isArray(progressData?.progress)
+            ? progressData.progress
+            : [];
+
+          const ids = new Set<string>();
+          progressArr.forEach((p: any) => {
+            const isCompleted =
+              p.completed === true ||
+              p.completed === "true" ||
+              p.completed === 1 ||
+              p.status === "completed" ||
+              Boolean(p.completedAt);
+
+            if (isCompleted && p.lessonId) {
+              ids.add(p.lessonId);
+            }
+          });
+
           setCompletedIds(ids);
         }
 
-        // Fetch quiz for this week
-        const quizRes = await authFetch(`/lms/quizzes/week/${weekId}`);
-        if (quizRes.ok) {
-          const quizzes = await quizRes.json();
-          if (quizzes.length > 0 && quizzes[0].isPublished) {
-            const currentQuiz = quizzes[0];
-            setQuiz(currentQuiz);
-            try {
-              const attemptsRes = await authFetch(`/lms/quizzes/${currentQuiz.id}/attempts/${payload.userId}`);
-              if (attemptsRes.ok) {
-                const attempts = await attemptsRes.json();
-                if (Array.isArray(attempts) && attempts.some((a: any) => Boolean(a.passed) || (typeof a.score === "number" && a.score >= 70))) {
-                  setQuizPassed(true);
+        // Fetch quiz for this week (try both endpoints with flexible schema parsing)
+        try {
+          let quizRes = await authFetch(`/lms/quizzes/week/${weekId}`);
+          if (!quizRes.ok) {
+            quizRes = await authFetch(`/lms/weeks/${weekId}/quiz`);
+          }
+          if (quizRes.ok) {
+            const quizData = await quizRes.json();
+            const quizList: Quiz[] = Array.isArray(quizData)
+              ? quizData
+              : Array.isArray(quizData?.data)
+              ? quizData.data
+              : Array.isArray(quizData?.quizzes)
+              ? quizData.quizzes
+              : quizData?.quiz
+              ? [quizData.quiz]
+              : quizData && typeof quizData === "object" && (quizData.id || quizData.title)
+              ? [quizData as Quiz]
+              : [];
+
+            const isStaff = userRole === "admin" || userRole === "trainer" || userRole === "lead_trainer";
+
+            if (quizList.length > 0) {
+              const currentQuiz = quizList[0];
+              if (isStaff || currentQuiz.isPublished !== false) {
+                setQuiz(currentQuiz);
+                try {
+                  const attemptsRes = await authFetch(`/lms/quizzes/${currentQuiz.id}/attempts/${payload.userId}`);
+                  if (attemptsRes.ok) {
+                    const attempts = await attemptsRes.json();
+                    const attemptList = Array.isArray(attempts)
+                      ? attempts
+                      : Array.isArray(attempts?.data)
+                      ? attempts.data
+                      : Array.isArray(attempts?.attempts)
+                      ? attempts.attempts
+                      : [];
+                    if (attemptList.some((a: any) => Boolean(a.passed) || (typeof a.score === "number" && a.score >= 70))) {
+                      setQuizPassed(true);
+                    }
+                  }
+                } catch {
+                  // Ignore attempt fetch error
                 }
               }
-            } catch {
-              // Ignore attempt fetch error
             }
           }
+        } catch (e) {
+          console.error("Error loading quiz:", e);
         }
 
         // Attendance no longer blocks quiz taking
@@ -1285,29 +1387,33 @@ export default function WeekPage() {
           );
         })}
 
-        {/* Quiz entry — displays when all lessons are completed */}
-        {quiz && allDone && (
+        {/* Quiz entry — displays whenever quiz exists for this week */}
+        {quiz && (
           <button
             onClick={() => {
               setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz");
             }}
             className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-all relative ${
-              showQuiz ? "bg-yellow-50 text-yellow-800" : "hover:bg-slate-50 text-slate-600"
+              showQuiz ? "bg-amber-50 text-amber-900" : "hover:bg-slate-50 text-slate-600 cursor-pointer"
             }`}>
-            {showQuiz && <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-yellow-400" />}
+            {showQuiz && <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-amber-500" />}
             <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-black ${
               quizPassed
                 ? "bg-green-50 text-green-600 border border-green-200"
-                : "bg-yellow-50 text-yellow-600 border border-yellow-250"
+                : allDone
+                ? "bg-amber-100 text-amber-800 border border-amber-300"
+                : "bg-slate-100 text-slate-400 border border-slate-200"
             }`}>
-              {quizPassed ? "✓" : "?"}
+              {quizPassed ? "✓" : allDone ? "📝" : "🔒"}
             </div>
             <div className="flex-1 min-w-0">
-              <p className={`text-xs font-semibold leading-snug ${showQuiz ? "text-yellow-800 font-bold" : "text-slate-600"}`}>
+              <p className={`text-xs font-semibold leading-snug ${showQuiz ? "text-amber-950 font-bold" : "text-slate-700"}`}>
                 {quiz.title}
               </p>
-              <span className="text-[10px] font-medium block mt-0.5 text-yellow-600">
-                {quizPassed ? "✅ Passed" : "Pass 70% to unlock next week"}
+              <span className={`text-[10px] font-medium block mt-0.5 ${
+                quizPassed ? "text-green-600" : allDone ? "text-amber-700 font-bold" : "text-slate-400"
+              }`}>
+                {quizPassed ? "✅ Passed" : allDone ? "📝 Take Quiz Now" : `🔒 Complete lessons first (${completedIds.size}/${lessons.length})`}
               </span>
             </div>
           </button>
@@ -1331,11 +1437,17 @@ export default function WeekPage() {
         )}
         {allDone && quiz && !quizPassed && (
           <button onClick={() => { setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz"); }}
-            className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-black text-sm py-3 rounded-xl transition cursor-pointer">
+            className="w-full bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] font-black text-sm py-3 rounded-xl transition cursor-pointer">
             📝 Take the Quiz
           </button>
         )}
-        {!allDone && (
+        {!allDone && quiz && (
+          <button onClick={() => { setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz"); }}
+            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-3 rounded-xl transition cursor-pointer">
+            🔒 Quiz Locked ({completedIds.size}/{lessons.length})
+          </button>
+        )}
+        {!allDone && !quiz && (
           <p className="text-slate-400 text-[11px] text-center font-semibold">
             {lessons.length - completedIds.size} lesson{lessons.length - completedIds.size !== 1 ? "s" : ""} remaining
           </p>
@@ -1385,22 +1497,56 @@ export default function WeekPage() {
         </aside>
         <main className="flex-1 overflow-hidden bg-transparent">
           {showQuiz && quiz ? (
-            <QuizPanel
-              quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
-              onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
-            />
+            allDone ? (
+              <QuizPanel
+                quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
+                onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full px-6 py-12 text-center">
+                <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-3xl mb-4">
+                  🔒
+                </div>
+                <h2 className="text-xl font-black text-[#002d25] mb-2">{quiz.title} is Locked</h2>
+                <p className="text-slate-500 text-sm max-w-md mb-6 leading-relaxed font-medium">
+                  You must complete all lessons in <strong>Week {week.weekNumber}</strong> before taking this quiz.
+                  <br />
+                  <span className="font-bold text-slate-700">({completedIds.size} of {lessons.length} lessons completed)</span>
+                </p>
+                <button
+                  onClick={() => {
+                    const firstUnfinished = lessons.findIndex((l) => !completedIds.has(l.id));
+                    if (firstUnfinished !== -1) setActiveLesson(firstUnfinished);
+                    setShowQuiz(false);
+                    setViewingOverview(false);
+                    setMobilePanel("lesson");
+                  }}
+                  className="px-6 py-3 bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] font-black text-xs uppercase tracking-wider rounded-xl transition cursor-pointer shadow-sm"
+                >
+                  Continue Unfinished Lessons →
+                </button>
+              </div>
+            )
           ) : viewingOverview ? (
             <OverviewPanel
               week={week}
               completedCount={completedIds.size}
               totalCount={lessons.length}
               nextUnlockedLessonIndex={lessons.findIndex((l) => !completedIds.has(l.id)) === -1 ? 0 : lessons.findIndex((l) => !completedIds.has(l.id))}
+              quiz={quiz}
+              quizPassed={quizPassed}
+              allDone={allDone}
               onStartLesson={(idx) => {
                 if (lessons.length > 0) {
                   setActiveLesson(idx);
                   setViewingOverview(false);
                   setShowQuiz(false);
                 }
+              }}
+              onOpenQuiz={() => {
+                setShowQuiz(true);
+                setViewingOverview(false);
+                setMobilePanel("quiz");
               }}
               onOpenReadingModal={(reading) => setActiveReadingModal(reading)}
             />
@@ -1444,6 +1590,9 @@ export default function WeekPage() {
               completedCount={completedIds.size}
               totalCount={lessons.length}
               nextUnlockedLessonIndex={lessons.findIndex((l) => !completedIds.has(l.id)) === -1 ? 0 : lessons.findIndex((l) => !completedIds.has(l.id))}
+              quiz={quiz}
+              quizPassed={quizPassed}
+              allDone={allDone}
               onStartLesson={(idx) => {
                 if (lessons.length > 0) {
                   setActiveLesson(idx);
@@ -1451,6 +1600,11 @@ export default function WeekPage() {
                   setShowQuiz(false);
                   setMobilePanel("lesson");
                 }
+              }}
+              onOpenQuiz={() => {
+                setShowQuiz(true);
+                setViewingOverview(false);
+                setMobilePanel("quiz");
               }}
               onOpenReadingModal={(reading) => setActiveReadingModal(reading)}
             />
@@ -1480,10 +1634,36 @@ export default function WeekPage() {
             </div>
           )}
           {mobilePanel === "quiz" && quiz && (
-            <QuizPanel
-              quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
-              onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
-            />
+            allDone ? (
+              <QuizPanel
+                quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
+                onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full px-6 py-12 text-center bg-white">
+                <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-3xl mb-4">
+                  🔒
+                </div>
+                <h2 className="text-xl font-black text-[#002d25] mb-2">{quiz.title} is Locked</h2>
+                <p className="text-slate-500 text-sm max-w-md mb-6 leading-relaxed font-medium">
+                  You must complete all lessons in <strong>Week {week.weekNumber}</strong> before taking this quiz.
+                  <br />
+                  <span className="font-bold text-slate-700">({completedIds.size} of {lessons.length} lessons completed)</span>
+                </p>
+                <button
+                  onClick={() => {
+                    const firstUnfinished = lessons.findIndex((l) => !completedIds.has(l.id));
+                    if (firstUnfinished !== -1) setActiveLesson(firstUnfinished);
+                    setShowQuiz(false);
+                    setViewingOverview(false);
+                    setMobilePanel("lesson");
+                  }}
+                  className="px-6 py-3 bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] font-black text-xs uppercase tracking-wider rounded-xl transition cursor-pointer shadow-sm"
+                >
+                  Continue Unfinished Lessons →
+                </button>
+              </div>
+            )
           )}
         </div>
 
@@ -1493,7 +1673,7 @@ export default function WeekPage() {
             { id: "overview" as MobilePanel, icon: "🎯", label: "Overview" },
             { id: "lesson" as MobilePanel, icon: "📖", label: "Lesson" },
             { id: "lessons" as MobilePanel, icon: "📋", label: "All" },
-            ...(quiz && allDone ? [{ id: "quiz" as MobilePanel, icon: "📝", label: "Quiz" }] : []),
+            ...(quiz ? [{ id: "quiz" as MobilePanel, icon: quizPassed ? "✅" : allDone ? "📝" : "🔒", label: "Quiz" }] : []),
           ]).map((t) => (
             <button key={t.id} onClick={() => {
               setMobilePanel(t.id);
