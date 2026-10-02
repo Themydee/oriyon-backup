@@ -1214,28 +1214,31 @@ export default function WeekPage() {
 
             const isStaff = userRole === "admin" || userRole === "trainer" || userRole === "lead_trainer";
 
-            if (quizList.length > 0) {
-              const currentQuiz = quizList[0];
-              if (isStaff || currentQuiz.isPublished !== false) {
-                setQuiz(currentQuiz);
-                try {
-                  const attemptsRes = await authFetch(`/lms/quizzes/${currentQuiz.id}/attempts/${payload.userId}`);
-                  if (attemptsRes.ok) {
-                    const attempts = await attemptsRes.json();
-                    const attemptList = Array.isArray(attempts)
-                      ? attempts
-                      : Array.isArray(attempts?.data)
-                      ? attempts.data
-                      : Array.isArray(attempts?.attempts)
-                      ? attempts.attempts
-                      : [];
-                    if (attemptList.some((a: any) => Boolean(a.passed) || (typeof a.score === "number" && a.score >= 70))) {
-                      setQuizPassed(true);
-                    }
+            // A week can hold an unpublished draft next to the real quiz. Trainees must
+            // get the published one; taking quizList[0] blindly could pick the draft and
+            // hide the quiz entirely, letting them move on without taking it.
+            const currentQuiz = isStaff
+              ? quizList[0]
+              : quizList.find((q) => q.isPublished !== false);
+            if (currentQuiz) {
+              setQuiz(currentQuiz);
+              try {
+                const attemptsRes = await authFetch(`/lms/quizzes/${currentQuiz.id}/attempts/${payload.userId}`);
+                if (attemptsRes.ok) {
+                  const attempts = await attemptsRes.json();
+                  const attemptList = Array.isArray(attempts)
+                    ? attempts
+                    : Array.isArray(attempts?.data)
+                    ? attempts.data
+                    : Array.isArray(attempts?.attempts)
+                    ? attempts.attempts
+                    : [];
+                  if (attemptList.some((a: any) => Boolean(a.passed) || (typeof a.score === "number" && a.score >= 70))) {
+                    setQuizPassed(true);
                   }
-                } catch {
-                  // Ignore attempt fetch error
                 }
+              } catch {
+                // Ignore attempt fetch error
               }
             }
           }
@@ -1281,12 +1284,26 @@ export default function WeekPage() {
       });
     }
 
-    // Auto advance
+    // Auto advance — after the final lesson, go straight to the weekly quiz
     const total = week.lessons?.length ?? 0;
+    const othersDone = (week.lessons ?? []).every((l) => l.id === lessonId || completedIds.has(l.id));
     if (lessonIndex + 1 < total) {
       setTimeout(() => setActiveLesson(lessonIndex + 1), 1000);
+    } else if (quiz && !quizPassed && othersDone) {
+      setTimeout(() => { setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz"); }, 1000);
     }
-  }, [completedIds, week, userId, cohortId]);
+  }, [completedIds, week, userId, cohortId, quiz, quizPassed]);
+
+  // Links from the exam portal (?quiz=1) open the weekly quiz directly
+  const openedQuizFromLink = useRef(false);
+  useEffect(() => {
+    if (loading || !quiz || openedQuizFromLink.current) return;
+    if (new URLSearchParams(window.location.search).get("quiz") !== "1") return;
+    openedQuizFromLink.current = true;
+    setShowQuiz(true);
+    setViewingOverview(false);
+    setMobilePanel("quiz");
+  }, [loading, quiz]);
 
   if (loading) return (
     <div className="min-h-screen bg-[#f4faf7] flex items-center justify-center text-slate-500 text-sm">

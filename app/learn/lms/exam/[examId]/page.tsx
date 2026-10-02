@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { authFetch } from "@/lib/api";
 import { useNavigationHistory } from "@/components/NavigationHistoryProvider";
+import MissingQuizzesNotice, { type MissingQuiz } from "@/components/lms/MissingQuizzesNotice";
 
 interface Exam {
   id: string;
@@ -64,6 +65,7 @@ export default function ExamPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitResult, setSubmitResult] = useState<SubmitResponse | null>(null);
+  const [missingQuizzes, setMissingQuizzes] = useState<MissingQuiz[]>([]);
 
   const answersRef = useRef<Record<string, string>>({});
   const autoSavingRef = useRef(false);
@@ -131,6 +133,13 @@ export default function ExamPage() {
         }
 
         setExam(data);
+
+        // Every weekly quiz must be taken before the exam can start
+        const reqRes = await authFetch(`/lms/exams/${examId}/quiz-requirements`);
+        if (reqRes.ok) {
+          const req = await reqRes.json();
+          setMissingQuizzes(Array.isArray(req.missingQuizzes) ? req.missingQuizzes : []);
+        }
       } catch {
         setError("Unable to load exam. Please try again.");
       }
@@ -203,7 +212,7 @@ export default function ExamPage() {
   };
 
   const handleStart = async () => {
-    if (!examId || !userId) return;
+    if (!examId || !userId || missingQuizzes.length > 0) return;
     setSubmitting(true);
     setError("");
     ignoreFullscreenExitRef.current = false;
@@ -222,6 +231,14 @@ export default function ExamPage() {
       if (!res.ok) {
         if (res.status === 409 && data.sessionId) {
           router.push(`/learn/lms/exam/session/${data.sessionId}/result`);
+          return;
+        }
+        if (data.code === "QUIZZES_INCOMPLETE" && Array.isArray(data.missingQuizzes)) {
+          ignoreFullscreenExitRef.current = true;
+          if (typeof document !== "undefined" && document.fullscreenElement) {
+            await document.exitFullscreen().catch(() => undefined);
+          }
+          setMissingQuizzes(data.missingQuizzes);
           return;
         }
         setError(data.error || "Unable to start exam.");
@@ -420,6 +437,12 @@ export default function ExamPage() {
           </div>
         )}
 
+        {status === "rules" && missingQuizzes.length > 0 && (
+          <div className="mb-6">
+            <MissingQuizzesNotice missingQuizzes={missingQuizzes} />
+          </div>
+        )}
+
         {status === "rules" && (
           <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
             <div className="bg-white border border-[#e2e8f0] rounded-3xl p-8 shadow-md">
@@ -449,10 +472,10 @@ export default function ExamPage() {
               </div>
               <button
                 onClick={handleStart}
-                disabled={submitting}
+                disabled={submitting || missingQuizzes.length > 0}
                 className="mt-8 w-full bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] font-bold rounded-2xl py-3 transition disabled:opacity-50 cursor-pointer"
               >
-                {submitting ? "Starting exam..." : "Start Exam"}
+                {submitting ? "Starting exam..." : missingQuizzes.length > 0 ? "🔒 Take all weekly quizzes first" : "Start Exam"}
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useNavigationHistory } from "@/components/NavigationHistoryProvider";
 import { authFetch, refreshAccessToken } from "@/lib/api";
+import MissingQuizzesNotice, { type MissingQuiz } from "@/components/lms/MissingQuizzesNotice";
 
 interface Exam {
   id: string;
@@ -22,6 +23,8 @@ export default function ExamsPage() {
   const [userId, setUserId] = useState("");
   const [cohortId, setCohortId] = useState("");
   const [exams, setExams] = useState<Exam[]>([]);
+  // examId -> weekly quizzes the trainee still has to take
+  const [missingByExam, setMissingByExam] = useState<Record<string, MissingQuiz[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -76,7 +79,22 @@ export default function ExamsPage() {
         }
 
         const examsData = await examsRes.json();
-        setExams(Array.isArray(examsData) ? examsData : []);
+        const examList: Exam[] = Array.isArray(examsData) ? examsData : [];
+        setExams(examList);
+
+        const requirements = await Promise.all(
+          examList.map(async (exam) => {
+            try {
+              const reqRes = await authFetch(`/lms/exams/${exam.id}/quiz-requirements`);
+              if (!reqRes.ok) return [exam.id, []] as const;
+              const req = await reqRes.json();
+              return [exam.id, Array.isArray(req.missingQuizzes) ? req.missingQuizzes : []] as const;
+            } catch {
+              return [exam.id, []] as const;
+            }
+          }),
+        );
+        setMissingByExam(Object.fromEntries(requirements));
       } catch (err: any) {
         setError(err?.message || "Failed to load exams.");
       } finally {
@@ -136,7 +154,9 @@ export default function ExamsPage() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {exams.map((exam) => (
+            {exams.map((exam) => {
+              const missing = missingByExam[exam.id] || [];
+              return (
               <div key={exam.id} className="rounded-3xl border border-[#e2e8f0] bg-white p-6 lg:p-8 shadow-md">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
@@ -155,15 +175,27 @@ export default function ExamsPage() {
                   <div className="text-sm text-slate-500">
                     This exam is scheduled after the cohort completes the final training phase.
                   </div>
-                  <Link
-                    href={`/learn/lms/exam/${exam.id}`}
-                    className="inline-flex items-center justify-center rounded-3xl bg-[#00D1C1] hover:bg-[#00b8aa] px-5 py-3 text-sm font-bold text-[#002d25] transition"
-                  >
-                    Start Exam
-                  </Link>
+                  {missing.length > 0 ? (
+                    <span className="inline-flex items-center justify-center rounded-3xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-500">
+                      🔒 {missing.length} quiz{missing.length === 1 ? "" : "zes"} to take first
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/learn/lms/exam/${exam.id}`}
+                      className="inline-flex items-center justify-center rounded-3xl bg-[#00D1C1] hover:bg-[#00b8aa] px-5 py-3 text-sm font-bold text-[#002d25] transition"
+                    >
+                      Start Exam
+                    </Link>
+                  )}
                 </div>
+                {missing.length > 0 && (
+                  <div className="mt-6">
+                    <MissingQuizzesNotice missingQuizzes={missing} />
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
