@@ -25,7 +25,7 @@ const NAV = [
   { href: "/admin/analytics",    icon: "📈", label: "Analytics",    roles: ["admin", "trainer", "lead_trainer"] },
   { href: "/admin/results",      icon: "📊", label: "Results",      roles: ["admin", "trainer", "lead_trainer", "sub_admin", "corper"] },
   { href: "/admin/practical-attendance", icon: "🐐", label: "Weekly Practical", roles: ["admin", "trainer", "lead_trainer", "sub_admin", "corper", "coordinator"] },
-  { href: "/admin/trainer-tickets", icon: "🎫", label: "Trainer Tickets", roles: ["admin", "sub_admin", "trainer", "lead_trainer"] },
+  { href: "/admin/trainer-tickets", icon: "🎫", label: "Trainer Tickets", roles: ["admin", "sub_admin"] },
   { href: "/admin/week12",       icon: "🗓️", label: "Week 12 Physical", roles: ["admin", "trainer", "lead_trainer", "sub_admin", "corper", "coordinator"] },
   { href: "/admin/appeals",      icon: "⚖️", label: "Appeals",          roles: ["admin", "trainer", "lead_trainer", "sub_admin"] },
   { href: "/admin/live-chat",    icon: "💬", label: "Live Support",     roles: ["admin", "trainer", "lead_trainer", "sub_admin"] },
