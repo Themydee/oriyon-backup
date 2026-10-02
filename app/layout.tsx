@@ -8,6 +8,7 @@ import ConditionalBackToTop from "@/components/layout/conditionalBackToTop";
 import CookieConsent from "@/components/layout/CookieConsent";
 import { NavigationHistoryProvider } from "@/components/NavigationHistoryProvider";
 import PopupProvider from "@/components/layout/PopupProvider";
+import ErrorReporter from "@/components/layout/ErrorReporter";
 
 import LiveChatWidget from "@/components/common/LiveChatWidget";
 
@@ -30,6 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${sora.variable} font-sans`}>
+        <ErrorReporter />
         <PopupProvider>
           <NavigationHistoryProvider>
             <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
