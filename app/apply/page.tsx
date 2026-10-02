@@ -197,6 +197,8 @@ function ApplyContent() {
   const [joinCoop, setJoinCoop] = useState("");
   const [desiredRoleOption1, setDesiredRoleOption1] = useState("");
   const [desiredRoleOption2, setDesiredRoleOption2] = useState("");
+  const [trainingSite, setTrainingSite] = useState("");
+  const [financiallyAbleToConvey, setFinanciallyAbleToConvey] = useState("");
 
   // Auto-save form fields & current step to local draft
   useEffect(() => {
@@ -223,6 +225,8 @@ function ApplyContent() {
             desiredRoleOption2,
             selectedCoopId,
             livestockType,
+            trainingSite,
+            financiallyAbleToConvey,
           },
           step
         );
@@ -249,6 +253,8 @@ function ApplyContent() {
     desiredRoleOption2,
     selectedCoopId,
     livestockType,
+    trainingSite,
+    financiallyAbleToConvey,
   ]);
 
   const restoreDraft = () => {
@@ -273,6 +279,8 @@ function ApplyContent() {
       if (d.desiredRoleOption2) setDesiredRoleOption2(d.desiredRoleOption2);
       if (d.selectedCoopId) setSelectedCoopId(d.selectedCoopId);
       if (d.livestockType) setLivestockType(d.livestockType);
+      if (d.trainingSite) setTrainingSite(d.trainingSite);
+      if (d.financiallyAbleToConvey) setFinanciallyAbleToConvey(d.financiallyAbleToConvey);
 
       if (typeof draft.step === "number") {
         router.push(`/apply?step=${draft.step}`);
@@ -546,6 +554,8 @@ function ApplyContent() {
       willingChampion,
       willingDonate,
       committedFullTraining,
+      trainingSite,
+      financiallyAbleToConvey,
       reference1,
       reference2,
       understandsCredit,
@@ -2552,6 +2562,60 @@ function ApplyContent() {
                         {o}
                       </label>
                     ))}
+                  </div>
+                </div>
+
+                {/* ── TRAINING SITE & COMMUTE READINESS ── */}
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-5 space-y-4">
+                  <h3 className="text-sm font-bold text-amber-900 uppercase tracking-wider flex items-center gap-2">
+                    <span>📍</span> Training Site & Commute Responsibility
+                  </h3>
+                  
+                  <div>
+                    <label className={labelClass}>
+                      Select Preferred Training Site *
+                    </label>
+                    <p className="text-xs text-amber-800 mb-2 leading-relaxed font-medium">
+                      ⚠️ <strong>Commute Notice:</strong> You are fully responsible for your daily commute and transportation to your selected training site.
+                    </p>
+                    <select
+                      required
+                      value={trainingSite}
+                      onChange={(e) => setTrainingSite(e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">Select Training Site Location</option>
+                      <option value="Ibadan Central Training Site (Oyo South)">Ibadan Central Training Site (Oyo South)</option>
+                      <option value="Oyo Town Training Site (Oyo Central)">Oyo Town Training Site (Oyo Central)</option>
+                      <option value="Ogbomoso Training Site (Oyo North)">Ogbomoso Training Site (Oyo North)</option>
+                      <option value="Iseyin Training Site (Oyo North)">Iseyin Training Site (Oyo North)</option>
+                      <option value="Saki Training Site (Oyo North)">Saki Training Site (Oyo North)</option>
+                      <option value="Eruwa / Ibarapa Training Site (Oyo South)">Eruwa / Ibarapa Training Site (Oyo South)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>
+                      Are you financially able to convey yourself to the training site? *
+                    </label>
+                    <p className="text-xs text-amber-800 mb-2">
+                      Please confirm you have the financial resources required for daily transportation throughout the 13-week training duration.
+                    </p>
+                    <div className="space-y-2 mt-2">
+                      {["Yes", "No"].map((o) => (
+                        <label key={o} className={radioClass}>
+                          <input
+                            required
+                            type="radio"
+                            name="financiallyAbleToConvey"
+                            value={o}
+                            checked={financiallyAbleToConvey === o}
+                            onChange={() => setFinanciallyAbleToConvey(o)}
+                          />
+                          {o}
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

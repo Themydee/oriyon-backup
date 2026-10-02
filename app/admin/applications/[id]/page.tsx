@@ -64,6 +64,8 @@ interface Application {
   reference2: string;
   understandsCredit: boolean;
   declarationConfirmed: boolean;
+  trainingSite?: string;
+  financiallyAbleToConvey?: string;
   desiredRoleOption1?: string;
   desiredRoleOption2?: string;
   approvedRole?: string;
@@ -1476,6 +1478,8 @@ function ApplicationDetailContent() {
           <Field label="Willing to Champion Community Group" value={app.willingChampion} />
           <Field label="Willing to Donate Time / Space" value={app.willingDonate} />
           <Field label="Committed to Full Training Schedule" value={app.committedFullTraining} />
+          <Field label="Selected Preferred Training Site (Commute Acknowledged)" value={app.trainingSite} />
+          <Field label="Financially Able to Convey to Training Site" value={app.financiallyAbleToConvey} />
           <Field label="Understands Credit Structure" value={app.understandsCredit} />
           <Field label="Declaration Confirmed" value={app.declarationConfirmed} />
         </Section>
