@@ -223,6 +223,13 @@ function DashboardHeader({
             🎥 Video Guides
           </Link>
 
+          <Link
+            href="/learn/lms/support"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold hover:bg-emerald-100 transition shadow-2xs"
+          >
+            🎫 Support Tickets
+          </Link>
+
           {coordHref && (
             <Link
               href={coordHref}
@@ -332,6 +339,14 @@ function DashboardHeader({
                       className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 transition"
                     >
                       💬 Trainee Q&A & Live Room
+                    </Link>
+
+                    <Link
+                      href="/learn/lms/support"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 transition"
+                    >
+                      🎫 Report a Trainer Issue
                     </Link>
 
                     <Link

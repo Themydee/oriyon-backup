@@ -10,8 +10,12 @@ import { getApiBase } from "@/lib/api";
 import { saveDraft, getDraft, clearDraft } from "@/lib/draftStorage";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import ResumeApplicationModal from "@/components/ResumeApplicationModal";
+import { PHYSICAL_SITES, getPhysicalSiteById } from "@/lib/sitesData";
 
 const API_BASE = getApiBase();
+
+const TRANSPORT_BLOCK_MESSAGE =
+  "You can only apply if you can pay for your own daily transport to and from your training site for the full 13 weeks. Oriyon does not provide transport.";
 
 // Helper to get unique states from LGA_ZONE_MAP
 const getStatesFromMap = (): string[] => {
@@ -197,7 +201,7 @@ function ApplyContent() {
   const [joinCoop, setJoinCoop] = useState("");
   const [desiredRoleOption1, setDesiredRoleOption1] = useState("");
   const [desiredRoleOption2, setDesiredRoleOption2] = useState("");
-  const [trainingSite, setTrainingSite] = useState("");
+  const [trainingSiteId, setTrainingSiteId] = useState("");
   const [financiallyAbleToConvey, setFinanciallyAbleToConvey] = useState("");
 
   // Auto-save form fields & current step to local draft
@@ -225,7 +229,7 @@ function ApplyContent() {
             desiredRoleOption2,
             selectedCoopId,
             livestockType,
-            trainingSite,
+            trainingSiteId,
             financiallyAbleToConvey,
           },
           step
@@ -253,7 +257,7 @@ function ApplyContent() {
     desiredRoleOption2,
     selectedCoopId,
     livestockType,
-    trainingSite,
+    trainingSiteId,
     financiallyAbleToConvey,
   ]);
 
@@ -279,7 +283,8 @@ function ApplyContent() {
       if (d.desiredRoleOption2) setDesiredRoleOption2(d.desiredRoleOption2);
       if (d.selectedCoopId) setSelectedCoopId(d.selectedCoopId);
       if (d.livestockType) setLivestockType(d.livestockType);
-      if (d.trainingSite) setTrainingSite(d.trainingSite);
+      // Older drafts stored a free-text site name; only restore a real site id
+      if (d.trainingSiteId && getPhysicalSiteById(d.trainingSiteId)) setTrainingSiteId(d.trainingSiteId);
       if (d.financiallyAbleToConvey) setFinanciallyAbleToConvey(d.financiallyAbleToConvey);
 
       if (typeof draft.step === "number") {
@@ -470,6 +475,11 @@ function ApplyContent() {
     e.preventDefault();
     setError("");
 
+    if (financiallyAbleToConvey === "No") {
+      setError(TRANSPORT_BLOCK_MESSAGE);
+      return;
+    }
+
     if (!understandsCredit || !declarationConfirmed || !agreesToDataProcessing) {
       setError("Please confirm the credit understanding, declaration, and data processing consent.");
       return;
@@ -554,7 +564,7 @@ function ApplyContent() {
       willingChampion,
       willingDonate,
       committedFullTraining,
-      trainingSite,
+      trainingSiteId,
       financiallyAbleToConvey,
       reference1,
       reference2,
@@ -1514,6 +1524,16 @@ function ApplyContent() {
                     }
                     if (desiredRoleOption1 === desiredRoleOption2) {
                       setError("Option 1 and Option 2 must be different trainee roles.");
+                      return;
+                    }
+                  }
+                  if (step === 5) {
+                    if (!trainingSiteId) {
+                      setError("Please choose the training site you will attend.");
+                      return;
+                    }
+                    if (financiallyAbleToConvey === "No") {
+                      setError(TRANSPORT_BLOCK_MESSAGE);
                       return;
                     }
                   }
@@ -2565,42 +2585,61 @@ function ApplyContent() {
                   </div>
                 </div>
 
-                {/* ── TRAINING SITE & COMMUTE READINESS ── */}
-                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-5 space-y-4">
-                  <h3 className="text-sm font-bold text-amber-900 uppercase tracking-wider flex items-center gap-2">
-                    <span>📍</span> Training Site & Commute Responsibility
-                  </h3>
-                  
+                {/* ── TRAINING SITE & COMMUTE ── */}
+                <div className="border-t border-gray-100 pt-6 space-y-5">
                   <div>
-                    <label className={labelClass}>
-                      Select Preferred Training Site *
-                    </label>
-                    <p className="text-xs text-amber-800 mb-2 leading-relaxed font-medium">
-                      ⚠️ <strong>Commute Notice:</strong> You are fully responsible for your daily commute and transportation to your selected training site.
+                    <p className="text-xs font-bold uppercase tracking-widest text-[#00D1C1] mb-1">Training site &amp; commute</p>
+                    <h3 className="text-lg font-bold text-[#061e1a]">Where will you attend practical training?</h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Practical sessions hold in person at one of the sites below. <strong>You are responsible for your own
+                      transport</strong> to and from the site you choose, so pick the one you can reach most easily.
                     </p>
-                    <select
-                      required
-                      value={trainingSite}
-                      onChange={(e) => setTrainingSite(e.target.value)}
-                      className={inputClass}
-                    >
-                      <option value="">Select Training Site Location</option>
-                      <option value="Ibadan Central Training Site (Oyo South)">Ibadan Central Training Site (Oyo South)</option>
-                      <option value="Oyo Town Training Site (Oyo Central)">Oyo Town Training Site (Oyo Central)</option>
-                      <option value="Ogbomoso Training Site (Oyo North)">Ogbomoso Training Site (Oyo North)</option>
-                      <option value="Iseyin Training Site (Oyo North)">Iseyin Training Site (Oyo North)</option>
-                      <option value="Saki Training Site (Oyo North)">Saki Training Site (Oyo North)</option>
-                      <option value="Eruwa / Ibarapa Training Site (Oyo South)">Eruwa / Ibarapa Training Site (Oyo South)</option>
-                    </select>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Choose your training site *</label>
+                    <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                      {PHYSICAL_SITES.map((site) => {
+                        const selected = trainingSiteId === site.id;
+                        return (
+                          <label
+                            key={site.id}
+                            className={`flex cursor-pointer gap-3 rounded-xl border p-4 transition ${
+                              selected ? "border-[#00D1C1] bg-[#00D1C1]/5 ring-1 ring-[#00D1C1]" : "border-gray-200 hover:border-gray-300"
+                            }`}
+                          >
+                            <input
+                              required
+                              type="radio"
+                              name="trainingSiteId"
+                              value={site.id}
+                              checked={selected}
+                              onChange={() => setTrainingSiteId(site.id)}
+                              className="mt-1"
+                            />
+                            <span>
+                              <span className="block text-sm font-bold text-[#061e1a]">{site.name}</span>
+                              <span className="block text-xs text-gray-500 mt-0.5">{site.address}</span>
+                              <a
+                                href={site.googleMapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-block text-xs font-semibold text-[#00a89b] hover:underline mt-1"
+                              >
+                                View on map ↗
+                              </a>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <div>
                     <label className={labelClass}>
-                      Are you financially able to convey yourself to the training site? *
+                      Are you financially able to pay for your own transport to this site for all 13 weeks? *
                     </label>
-                    <p className="text-xs text-amber-800 mb-2">
-                      Please confirm you have the financial resources required for daily transportation throughout the 13-week training duration.
-                    </p>
                     <div className="space-y-2 mt-2">
                       {["Yes", "No"].map((o) => (
                         <label key={o} className={radioClass}>
@@ -2610,12 +2649,18 @@ function ApplyContent() {
                             name="financiallyAbleToConvey"
                             value={o}
                             checked={financiallyAbleToConvey === o}
-                            onChange={() => setFinanciallyAbleToConvey(o)}
+                            onChange={() => { setFinanciallyAbleToConvey(o); setError(""); }}
                           />
                           {o}
                         </label>
                       ))}
                     </div>
+                    {financiallyAbleToConvey === "No" && (
+                      <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        <p className="font-bold mb-1">You can&apos;t continue with this application</p>
+                        <p>{TRANSPORT_BLOCK_MESSAGE}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
