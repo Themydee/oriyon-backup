@@ -45,48 +45,25 @@ export default function ResumeApplicationModal({
     setLoading(true);
 
     try {
-      // 1. First, attempt to check via /cooperative/check-status or search endpoints
-      let res = await fetch(`${API_BASE}/cooperative/check-status?identifier=${encodeURIComponent(query)}`);
-      
-      let data: any = null;
-      if (res.ok) {
-        data = await res.json();
-      } else {
-        // Fallback search attempt if dedicated check endpoint is unavailable
-        const searchRes = await fetch(`${API_BASE}/cooperative/members?search=${encodeURIComponent(query)}`);
-        if (searchRes.ok) {
-          const list = await searchRes.json();
-          const found = Array.isArray(list) ? list.find((m: any) => 
-            (m.email && m.email.toLowerCase() === query.toLowerCase()) || 
-            (m.phone && m.phone.includes(query)) ||
-            (m.memberId && m.memberId.toLowerCase() === query.toLowerCase())
-          ) : null;
-
-          if (found) {
-            data = {
-              found: true,
-              memberId: found.id || found.memberId,
-              email: found.email,
-              phone: found.phone,
-              fullName: found.fullName,
-              address: found.address,
-              paymentStatus: found.registrationFeePaid === "YES" ? "PAID" : "PENDING",
-            };
-          }
-        }
+      // Public lookup: returns only { found, memberId, paymentStatus, whatsappLink }.
+      const res = await fetch(`${API_BASE}/cooperative/check-status?identifier=${encodeURIComponent(query)}`);
+      if (res.status === 429) {
+        setError("Too many attempts. Please wait a few minutes and try again.");
+        return;
       }
+      if (!res.ok) {
+        throw new Error(`check-status responded ${res.status}`);
+      }
+      const data: any = await res.json();
 
-      if (data && (data.found || data.memberId || data.id)) {
-        const memberId = data.memberId || data.id;
-        const isPending = data.paymentStatus === "PENDING" || data.registrationFeePaid !== "YES";
-        
+      if (data?.found && data.memberId) {
         setSuccessInfo({
-          memberId,
-          email: data.email || (query.includes("@") ? query : ""),
-          phone: data.phone || (!query.includes("@") ? query : ""),
-          fullName: data.fullName || "",
-          address: data.address || "",
-          paymentStatus: data.paymentStatus || (isPending ? "PENDING" : "PAID"),
+          memberId: data.memberId,
+          email: query.includes("@") ? query : "",
+          phone: !query.includes("@") ? query : "",
+          fullName: "",
+          address: "",
+          paymentStatus: data.paymentStatus === "PAID" ? "PAID" : "PENDING",
           whatsappLink: data.whatsappLink || "",
         });
       } else {
@@ -114,13 +91,7 @@ export default function ResumeApplicationModal({
       }
     } catch (err: any) {
       console.error("Error looking up application status:", err);
-      // If error occurs (e.g. backend lookup fails), treat search input as resume prefill
-      onSelectResume({
-        email: query.includes("@") ? query : undefined,
-        phone: !query.includes("@") ? query : undefined,
-        isPaymentPending: true,
-      });
-      onClose();
+      setError("We couldn't check your application right now. Please try again in a moment.");
     } finally {
       setLoading(false);
     }

@@ -207,10 +207,10 @@ export default function AdminResendLinkPage() {
     setCustomEmailInput("");
   };
 
-  // Send Direct Setup Token via native /auth/resend-setup endpoint
+  // Send a setup link via the admin-only /auth/admin/resend-setup endpoint
   const sendSetupLinkToEmail = async (targetEmail: string) => {
     try {
-      const res = await authFetch("/auth/resend-setup", {
+      const res = await authFetch("/auth/admin/resend-setup", {
         method: "POST",
         body: JSON.stringify({ email: targetEmail }),
       });
@@ -673,7 +673,7 @@ export default function AdminResendLinkPage() {
                 <span>What happens when you click send:</span>
               </div>
               <p>
-                The system calls the native setup endpoint (<code>/auth/resend-setup</code>) which generates a secure, 7-day password setup link and emails it directly to the recipient’s inbox.
+                The system calls the native setup endpoint (<code>/auth/admin/resend-setup</code>) which generates a secure, 7-day password setup link and emails it directly to the recipient’s inbox.
               </p>
             </div>
 
