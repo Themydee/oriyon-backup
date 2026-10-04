@@ -27,6 +27,7 @@ interface LogEntry {
 interface BulkSummary {
   pendingAccounts: number;
   withoutProfile: number;
+  revoked?: number;
   withActiveLink: number;
   eligible: number;
   batchSize: number;
@@ -418,7 +419,7 @@ export default function AdminResendLinkPage() {
               People whose current link is still valid are skipped.
               {bulkSummary && (
                 <>
-                  {" "}Waiting to set a password: {bulkSummary.pendingAccounts - bulkSummary.withoutProfile}
+                  {" "}Waiting to set a password: {bulkSummary.pendingAccounts - bulkSummary.withoutProfile - (bulkSummary.revoked ?? 0)}
                   {" "}· current link still valid: {bulkSummary.withActiveLink}.
                 </>
               )}
