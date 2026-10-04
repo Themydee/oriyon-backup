@@ -766,9 +766,7 @@ function TraineeDashboardContent() {
         const refresh = localStorage.getItem("refreshToken");
         if (!refresh) return router.replace("/learn/lms");
 
-        let token =
-          useAuthStore.getState().accessToken ||
-          (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null);
+        let token = useAuthStore.getState().accessToken;
 
         if (!token && refresh) {
           try {
@@ -1025,18 +1023,17 @@ function TraineeDashboardContent() {
         await fetchAndSyncUserPracticalCheckins(user.id);
 
         // Always check cooperative membership status in the background
+        // A 404 here just means the user is not a cooperative member.
         if (user.email) {
-          const [coopRes, paymentsRes] = await Promise.all([
-            authFetch("/cooperative/members/me"),
-            authFetch("/cooperative/members/me/payments"),
-          ]);
+          const coopRes = await authFetch("/cooperative/members/me");
           if (coopRes.ok) {
             const coopData = await coopRes.json();
             setCoopDetails(coopData);
-          }
-          if (paymentsRes.ok) {
-            const paymentsData = await paymentsRes.json();
-            setPayments(Array.isArray(paymentsData) ? paymentsData : []);
+            const paymentsRes = await authFetch("/cooperative/members/me/payments");
+            if (paymentsRes.ok) {
+              const paymentsData = await paymentsRes.json();
+              setPayments(Array.isArray(paymentsData) ? paymentsData : []);
+            }
           }
         }
 

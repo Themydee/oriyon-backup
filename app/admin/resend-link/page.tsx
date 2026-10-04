@@ -24,6 +24,17 @@ interface LogEntry {
   time: string;
 }
 
+interface BulkSummary {
+  pendingAccounts: number;
+  withoutProfile: number;
+  revoked?: number;
+  withActiveLink: number;
+  eligible: number;
+  batchSize: number;
+}
+
+const BULK_BATCH_SIZE = 100;
+
 export default function AdminResendLinkPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -37,10 +48,26 @@ export default function AdminResendLinkPage() {
 
   // Email Log History
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [bulkSummary, setBulkSummary] = useState<BulkSummary | null>(null);
 
   useEffect(() => {
     fetchUsers();
+    fetchBulkSummary();
   }, []);
+
+  // Server-side count of everyone still waiting to set a password (all pages,
+  // not just the users loaded in the table below).
+  const fetchBulkSummary = async () => {
+    try {
+      const res = await authFetch("/auth/admin/resend-setup/bulk", {
+        method: "POST",
+        body: JSON.stringify({ dryRun: true }),
+      });
+      if (res.ok) setBulkSummary(await res.json());
+    } catch {
+      // Summary is informational; the page still works without it.
+    }
+  };
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -284,36 +311,51 @@ export default function AdminResendLinkPage() {
     );
   };
 
-  // Dedicated action to send emails to all users who haven't set up accounts
+  // Send setup links to everyone still pending, in server-side batches of 100
+  // (oldest accounts first). People whose current link hasn't expired are skipped.
   const handleSendAllPending = async () => {
-    const pendingEmails = pendingUsers.map((u) => u.email).filter(Boolean);
-    if (pendingEmails.length === 0) {
-      await popup.alert("No pending setup users found!");
+    const summary = bulkSummary;
+    if (!summary || summary.eligible === 0) {
+      await popup.alert("Nobody is waiting for a new setup link right now.");
       return;
     }
 
     const confirmed = await popup.confirm(
-      `🚨 BULK RESEND ACTION\n\nThis will send first-time account setup links to ALL ${pendingEmails.length} user(s) who haven't set up their accounts yet.\n\nDo you wish to proceed?`
+      `Send setup links to everyone still pending?\n\n` +
+        `${summary.eligible} people need a new link. They are sent in batches of ${BULK_BATCH_SIZE}, oldest accounts first.\n` +
+        `${summary.withActiveLink} people already have a link that hasn't expired and are skipped.\n\n` +
+        `Proceed with the first batch?`
     );
     if (!confirmed) return;
 
     setSending(true);
-    let successCount = 0;
-
-    for (let i = 0; i < pendingEmails.length; i++) {
-      const email = pendingEmails[i];
-      setProgress({ current: i + 1, total: pendingEmails.length, currentEmail: email });
-      const ok = await sendSetupLinkToEmail(email);
-      if (ok) successCount++;
+    try {
+      const res = await authFetch("/auth/admin/resend-setup/bulk", {
+        method: "POST",
+        body: JSON.stringify({ limit: BULK_BATCH_SIZE }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await popup.alert(data.error || "Bulk send failed. Please try again.");
+        return;
+      }
+      addLog(
+        `${data.sent} recipients`,
+        "Bulk Setup Links",
+        data.failed > 0 ? "failed" : "success",
+        `Sent ${data.sent}, failed ${data.failed}, still pending ${data.remaining}`
+      );
+      await popup.alert(
+        `Sent ${data.sent} setup link(s).` +
+          (data.failed ? ` ${data.failed} failed (see server logs).` : "") +
+          (data.remaining ? `\n\n${data.remaining} still need a link. Click the button again to send the next batch.` : "\n\nEveryone pending now has a fresh link.")
+      );
+    } catch {
+      await popup.alert("Connection error. Please try again.");
+    } finally {
+      setSending(false);
+      fetchBulkSummary();
     }
-
-    setSending(false);
-    setProgress(null);
-    setSelectedEmails([]);
-
-    await popup.alert(
-      `🎉 Bulk dispatch complete!\n\nSuccessfully sent setup links to ${successCount} of ${pendingEmails.length} pending account user(s).`
-    );
   };
 
   const addLog = (email: string, type: string, status: "success" | "failed", message: string) => {
@@ -366,15 +408,21 @@ export default function AdminResendLinkPage() {
                 ⚡ Bulk Action Section
               </span>
               <span className="bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-                {pendingUsers.length} Unset Account(s) Found
+                {bulkSummary ? `${bulkSummary.eligible} need a new link` : `${pendingUsers.length} Unset Account(s) Found`}
               </span>
             </div>
             <h2 className="text-xl font-black text-white">
               Send Resend Links to Pending Accounts
             </h2>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Target all users, applicants, or cooperative members who haven't set up their password yet.
-              Each recipient receives an email with a secure, 7-day single-use link to activate their portal account.
+              Sends a fresh 7-day setup link to every approved person who hasn't set a password yet, in batches of {BULK_BATCH_SIZE}.
+              People whose current link is still valid are skipped.
+              {bulkSummary && (
+                <>
+                  {" "}Waiting to set a password: {bulkSummary.pendingAccounts - bulkSummary.withoutProfile - (bulkSummary.revoked ?? 0)}
+                  {" "}· current link still valid: {bulkSummary.withActiveLink}.
+                </>
+              )}
             </p>
           </div>
 
@@ -390,7 +438,7 @@ export default function AdminResendLinkPage() {
 
             <button
               onClick={handleSendAllPending}
-              disabled={sending || pendingUsers.length === 0}
+              disabled={sending || !bulkSummary || bulkSummary.eligible === 0}
               className="bg-gradient-to-r from-amber-600 via-orange-600 to-emerald-600 hover:from-amber-500 hover:to-emerald-500 text-white font-black text-xs px-5 py-3.5 rounded-xl transition shadow-lg shadow-amber-950/50 disabled:opacity-40 cursor-pointer flex items-center justify-center gap-2"
             >
               {sending ? (
@@ -401,7 +449,11 @@ export default function AdminResendLinkPage() {
               ) : (
                 <>
                   <span>🚀</span>
-                  <span>Resend Setup to ALL ({pendingUsers.length}) Pending Users</span>
+                  <span>
+                    {bulkSummary
+                      ? `Send next batch (${Math.min(BULK_BATCH_SIZE, bulkSummary.eligible)} of ${bulkSummary.eligible})`
+                      : "Checking pending accounts…"}
+                  </span>
                 </>
               )}
             </button>

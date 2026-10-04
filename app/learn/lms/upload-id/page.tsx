@@ -25,9 +25,7 @@ export default function UploadIdPage() {
 
   useEffect(() => {
     const init = async () => {
-      let token =
-        useAuthStore.getState().accessToken ||
-        (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null);
+      let token = useAuthStore.getState().accessToken;
 
       if (!token && typeof window !== "undefined" && localStorage.getItem("refreshToken")) {
         try {

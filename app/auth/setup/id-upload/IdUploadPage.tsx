@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
-import { authFetch, refreshAccessToken } from "@/lib/api";
+import { authFetch, refreshAccessToken, getAccessToken } from "@/lib/api";
 
 const ID_TYPES = [
   "National ID (NIN)",
@@ -32,7 +32,7 @@ export default function IdUploadPage() {
 
   useEffect(() => {
     const resolveUser = async () => {
-      let token = tokenFromStore || (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null);
+      let token = tokenFromStore;
       if (!token && typeof window !== "undefined" && localStorage.getItem("refreshToken")) {
         try {
           token = await refreshAccessToken();
@@ -161,7 +161,7 @@ export default function IdUploadPage() {
     let userId = resolvedUserId || (typeof window !== "undefined" ? localStorage.getItem("userId") : null);
 
     if (!userId) {
-      const token = useAuthStore.getState().accessToken || (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null);
+      const token = await getAccessToken();
       if (token) {
         try {
           const payload = JSON.parse(atob(token.split(".")[1]));

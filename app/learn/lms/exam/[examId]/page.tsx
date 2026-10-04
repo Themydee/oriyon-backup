@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { authFetch } from "@/lib/api";
+import { authFetch, getAccessToken } from "@/lib/api";
 import { useNavigationHistory } from "@/components/NavigationHistoryProvider";
 import MissingQuizzesNotice, { type MissingQuiz } from "@/components/lms/MissingQuizzesNotice";
 
@@ -75,7 +75,7 @@ export default function ExamPage() {
 
   useEffect(() => {
     const checkUser = async () => {
-      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+      const token = await getAccessToken();
       if (!token) {
         router.replace("/learn/lms");
         return;
