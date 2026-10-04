@@ -33,6 +33,16 @@ export const API_BASE = {
   },
 } as unknown as string;
 
+// The access token lives in memory only (useAuthStore). Remove any copy left
+// in localStorage by older versions of the app.
+if (typeof window !== "undefined") {
+  try {
+    localStorage.removeItem("accessToken");
+  } catch {
+    // Storage can be unavailable (private mode); nothing to clean up then.
+  }
+}
+
 let refreshPromise: Promise<string> | null = null;
 
 // Refresh the access token silently using the refresh token
@@ -70,14 +80,25 @@ export const refreshAccessToken = async (): Promise<string> => {
   return refreshPromise;
 };
 
+// Current access token from memory, or a fresh one from the refresh token
+// (after a page reload the in-memory token is gone). Null when signed out.
+export const getAccessToken = async (): Promise<string | null> => {
+  const token = useAuthStore.getState().accessToken;
+  if (token) return token;
+  if (typeof window === "undefined" || !localStorage.getItem("refreshToken")) return null;
+  try {
+    return await refreshAccessToken();
+  } catch {
+    return null;
+  }
+};
+
 // Use this instead of fetch() for all protected routes
 export const authFetch = async (
   url: string,
   options: RequestInit = {}
 ): Promise<Response> => {
-  let accessToken =
-    useAuthStore.getState().accessToken ||
-    (typeof window !== "undefined" ? localStorage.getItem("accessToken") : null);
+  let accessToken = useAuthStore.getState().accessToken;
 
   const fullUrl = buildApiUrl(url);
 

@@ -59,7 +59,6 @@ export default function SetupPasswordForm({ token }: SetupPasswordFormProps) {
 
       const { accessToken, refreshToken, role } = data;
       localStorage.setItem("refreshToken", refreshToken);
-      localStorage.setItem("accessToken", accessToken);
       setAccessToken(accessToken);
 
       // Redirect to correct dashboard based on role

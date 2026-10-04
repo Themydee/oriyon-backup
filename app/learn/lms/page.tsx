@@ -47,7 +47,6 @@ export default function LMSLogin() {
 
       // Save first
       localStorage.setItem("refreshToken", refreshToken);
-      localStorage.setItem("accessToken", accessToken);
 
       // Zustand
       setAccessToken(accessToken);
