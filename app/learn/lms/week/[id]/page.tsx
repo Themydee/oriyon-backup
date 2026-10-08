@@ -304,7 +304,7 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
       )}
 
       {/* WEEKLY QUIZ CARD IN OVERVIEW */}
-      {quiz && (
+      {quiz && allDone && (
         <div className={`rounded-2xl p-5 mb-8 border shadow-sm font-sora flex items-center justify-between gap-4 flex-wrap ${
           quizPassed
             ? "bg-emerald-50 border-emerald-200 text-emerald-950"
@@ -836,8 +836,11 @@ function LessonPanel({ lesson, index, total, isDone, nextUnlocked, onComplete, o
       const effectiveBody = (rawBody && rawBody.trim() !== "") ? rawBody : (lesson.description || "");
 
       if (!effectiveBody || effectiveBody.trim() === "") {
-        setScrollPct(100);
-        if (!hasAudio) setCanComplete(true);
+        if (hasAudio) {
+          return;
+        }
+        setScrollPct(0);
+        setCanComplete(false);
         return;
       }
       const { scrollTop, scrollHeight, clientHeight } = el;
@@ -1001,13 +1004,13 @@ function LessonPanel({ lesson, index, total, isDone, nextUnlocked, onComplete, o
                     </span>
                     <span className="text-xs font-bold text-amber-600 font-mono">Audio required</span>
                   </>
-                ) : !lesson.body || lesson.body.trim() === "" ? (
+                ) : (!lesson.body || lesson.body.trim() === "") && !hasAudio ? (
                   <>
                     <span className="text-sm">⏳</span>
                     <span className="text-xs text-slate-550 flex-1 font-semibold">
-                      This lesson has no content yet. Completion is locked until the body is available.
+                      This lesson has no content yet. Completion is locked until material is added by your trainer.
                     </span>
-                    <span className="text-xs font-bold text-red-650">0%</span>
+                    <span className="text-xs font-bold text-amber-700 font-mono">No Content</span>
                   </>
                 ) : (
                   <>
@@ -1246,7 +1249,21 @@ export default function WeekPage() {
           console.error("Error loading quiz:", e);
         }
 
-        // Attendance no longer blocks quiz taking
+        // Enforce practical attendance link for non-staff trainees:
+        // To access Week N (N > 1), trainee must have checked in for Week N - 1 practical!
+        await fetchAndSyncUserPracticalCheckins(payload.userId);
+        const checkedInWeeks = getUserPracticalCheckinWeeks(payload.userId);
+
+        if (userRole === "trainee" && weekData.weekNumber > 1) {
+          const prevWeekNum = weekData.weekNumber - 1;
+          const prevPracticalDone = checkedInWeeks.includes(prevWeekNum);
+          if (!prevPracticalDone) {
+            setIsPracticalPresent(false);
+            setError(`Practical Attendance Required: You must attend and check in your Week ${prevWeekNum} practical session before you can access Week ${weekData.weekNumber} lessons.`);
+            setLoading(false);
+            return;
+          }
+        }
         setIsPracticalPresent(true);
       } catch {
         setError("Failed to load week.");
@@ -1297,7 +1314,7 @@ export default function WeekPage() {
   // Links from the exam portal (?quiz=1) open the weekly quiz directly
   const openedQuizFromLink = useRef(false);
   useEffect(() => {
-    if (loading || !quiz || openedQuizFromLink.current) return;
+    if (loading || !quiz || !allDone || openedQuizFromLink.current) return;
     if (new URLSearchParams(window.location.search).get("quiz") !== "1") return;
     openedQuizFromLink.current = true;
     setShowQuiz(true);
@@ -1312,7 +1329,7 @@ export default function WeekPage() {
   );
 
   if (error || !week) return (
-    <div className="min-h-screen bg-[#f4faf7] flex flex-col items-center justify-center gap-4 p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-[#f4faf7] flex flex-col items-center justify-center gap-4 p-6 relative overflow-hidden font-sora">
       {/* Subtle repeating greenSubtract background pattern */}
       <div 
         className="absolute inset-0 opacity-[0.03] pointer-events-none" 
@@ -1322,10 +1339,26 @@ export default function WeekPage() {
           backgroundRepeat: 'repeat' 
         }} 
       />
-      <div className="text-center relative z-10">
-        <span className="text-5xl">🔍</span>
-        <p className="text-slate-500 text-center mt-3">{error || "Week not found."}</p>
-        <Link href="/learn/lms/dashboard" className="text-green-600 font-bold text-sm hover:underline mt-4 block">← Dashboard</Link>
+      <div className="max-w-md bg-white border border-slate-200 rounded-3xl p-8 text-center shadow-xl relative z-10 space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-3xl mx-auto shadow-xs">
+          🔒
+        </div>
+        <h2 className="text-xl font-black text-[#002d25]">Week Access Locked</h2>
+        <p className="text-slate-600 text-xs leading-relaxed font-medium">{error || "Week not found."}</p>
+        
+        <div className="pt-2 flex flex-col gap-2.5">
+          {week && week.weekNumber > 1 && (
+            <Link
+              href={`/learn/lms/practical-attendance?week=${week.weekNumber - 1}`}
+              className="w-full py-3 bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] font-extrabold text-xs rounded-xl transition shadow-sm uppercase tracking-wider"
+            >
+              Check In Week {week.weekNumber - 1} Practical Code →
+            </Link>
+          )}
+          <Link href="/learn/lms/dashboard" className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition">
+            ← Back to Dashboard
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -1433,8 +1466,8 @@ export default function WeekPage() {
           );
         })}
 
-        {/* Quiz entry — displays whenever quiz exists for this week */}
-        {quiz && (
+        {/* Quiz entry — displays when all weekly lessons are done */}
+        {quiz && allDone && (
           <button
             onClick={() => {
               setShowQuiz(true); setViewingOverview(false); setMobilePanel("quiz");
@@ -1721,7 +1754,7 @@ export default function WeekPage() {
             { id: "overview" as MobilePanel, icon: "🎯", label: "Overview" },
             { id: "lesson" as MobilePanel, icon: "📖", label: "Lesson" },
             { id: "lessons" as MobilePanel, icon: "📋", label: "All" },
-            ...(quiz ? [{ id: "quiz" as MobilePanel, icon: quizPassed ? "✅" : allDone ? "📝" : "🔒", label: "Quiz" }] : []),
+            ...(quiz && allDone ? [{ id: "quiz" as MobilePanel, icon: quizPassed ? "✅" : "📝", label: "Quiz" }] : []),
           ]).map((t) => (
             <button key={t.id} onClick={() => {
               setMobilePanel(t.id);

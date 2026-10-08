@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/authStore";
 import { authFetch, refreshAccessToken, getApiBase } from "@/lib/api";
 import { popup } from "@/components/layout/PopupProvider";
 import PracticalDayModal from "@/components/lms/PracticalDayModal";
-import { getStoredPracticalCheckins, fetchAndSyncUserPracticalCheckins } from "@/lib/practicalData";
+import { getStoredPracticalCheckins, fetchAndSyncUserPracticalCheckins, getUserPracticalCheckinWeeks } from "@/lib/practicalData";
 import {
   getPhysicalSiteById,
   inferPhysicalSiteFromInstitutionOrLga,
@@ -1186,7 +1186,17 @@ function TraineeDashboardContent() {
     // Completing the previous week's online lessons unlocks the next week.
     // The weekly quiz remains as "Pending" until the user attempts & passes it.
     const prevOnlineDone = isWeekComplete(prevWeek);
-    return prevOnlineDone;
+    if (!prevOnlineDone) return false;
+
+    // Enforce practical attendance link for non-staff users:
+    const isStaff = userRole === "admin" || userRole === "trainer" || userRole === "lead_trainer";
+    if (!isStaff && prevWeek.weekNumber) {
+      const checkedInWeeks = getUserPracticalCheckinWeeks(userId);
+      const prevPracticalDone = checkedInWeeks.includes(prevWeek.weekNumber);
+      if (!prevPracticalDone) return false;
+    }
+
+    return true;
   };
 
   const completedWeeks   = useMemo(() => (Array.isArray(weeks) ? weeks : []).filter(isWeekComplete).length, [weeks, progress]);
@@ -2076,6 +2086,10 @@ function TraineeDashboardContent() {
                   const isCurrent = currentWeek?.id === week.id;
                   const isLockedByDate = week.unlockDate && new Date() < new Date(week.unlockDate);
 
+                  const isStaff = userRole === "admin" || userRole === "trainer" || userRole === "lead_trainer";
+                  const prevWeek = i > 0 ? weeks[i - 1] : null;
+                  const isPrevPracticalMissing = !isStaff && prevWeek && prevWeek.weekNumber && !getUserPracticalCheckinWeeks(userId).includes(prevWeek.weekNumber);
+
                   return (
                     <button
                       key={week.id}
@@ -2109,13 +2123,21 @@ function TraineeDashboardContent() {
                               ? "bg-green-50 text-green-700"
                               : unlocked
                                 ? "bg-slate-100 text-slate-500"
-                                : "bg-slate-100 text-slate-400"
+                                : isPrevPracticalMissing
+                                  ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                  : "bg-slate-100 text-slate-400"
                         }`}>
-                          {completed ? "✓ Done" : isCurrent ? "In progress" : unlocked ? "Open" : isLockedByDate ? "🔒 Locked" : "🔒"}
+                          {completed ? "✓ Done" : isCurrent ? "In progress" : unlocked ? "Open" : isLockedByDate ? "🔒 Locked" : isPrevPracticalMissing ? `🔒 Practical W${prevWeek?.weekNumber} Needed` : "🔒"}
                         </span>
                       </div>
 
                       <h3 className="text-sm font-bold text-slate-800 leading-snug mb-3">{week.title}</h3>
+
+                      {!unlocked && isPrevPracticalMissing && (
+                        <p className="text-[11px] text-amber-700 font-bold mb-3">
+                          ⚠️ Attend Week {prevWeek?.weekNumber} practical to unlock
+                        </p>
+                      )}
 
                       {isLockedByDate && (
                         <p className="text-[11px] text-amber-700 font-bold mb-3">
