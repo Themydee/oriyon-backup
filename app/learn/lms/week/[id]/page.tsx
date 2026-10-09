@@ -1251,8 +1251,14 @@ export default function WeekPage() {
 
         // Enforce practical attendance link for non-staff trainees:
         // To access Week N (N > 1), trainee must have checked in for Week N - 1 practical!
-        await fetchAndSyncUserPracticalCheckins(payload.userId);
-        const checkedInWeeks = getUserPracticalCheckinWeeks(payload.userId);
+        const effUid = payload.userId || payload.sub || payload.id || userId || "";
+        const userCheckins = await fetchAndSyncUserPracticalCheckins(effUid);
+        const checkedInWeeks = Array.from(
+          new Set([
+            ...userCheckins.map((c) => Number(c.weekNumber)),
+            ...getUserPracticalCheckinWeeks(effUid),
+          ])
+        );
 
         if (userRole === "trainee" && weekData.weekNumber > 1) {
           const prevWeekNum = weekData.weekNumber - 1;

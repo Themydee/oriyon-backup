@@ -206,7 +206,17 @@ export function saveStoredPracticalCheckin(checkin: PracticalCheckin): void {
   if (typeof window === "undefined") return;
   try {
     const existing = getStoredPracticalCheckins();
-    const updated = [checkin, ...existing.filter((c) => c.id !== checkin.id)];
+    const updated = [
+      checkin,
+      ...existing.filter(
+        (c) =>
+          c.id !== checkin.id &&
+          !(
+            String(c.userId || (c as any).user_id || "").trim().toLowerCase() === String(checkin.userId).trim().toLowerCase() &&
+            Number(c.weekNumber) === Number(checkin.weekNumber)
+          )
+      ),
+    ];
     localStorage.setItem(STORAGE_CHECKINS_KEY, JSON.stringify(updated));
   } catch {}
 }
@@ -218,7 +228,7 @@ export function clearStoredPracticalCheckins(cohortId?: string, weekNumber?: num
     const updated = existing.filter((c) => {
       if (cohortId && c.cohortId !== cohortId) return true;
       if (weekNumber !== undefined && Number(c.weekNumber) !== Number(weekNumber)) return true;
-      if (userId && c.userId !== userId) return true;
+      if (userId && String(c.userId || (c as any).user_id || "").trim().toLowerCase() !== String(userId).trim().toLowerCase()) return true;
       return false;
     });
     localStorage.setItem(STORAGE_CHECKINS_KEY, JSON.stringify(updated));
@@ -229,16 +239,22 @@ export function clearStoredPracticalCheckins(cohortId?: string, weekNumber?: num
  * Gets checked-in week numbers for a trainee.
  */
 export function getUserPracticalCheckinWeeks(userId: string): number[] {
-  if (!userId) return [];
-  const uIdNorm = String(userId).trim().toLowerCase();
   const checkins = getStoredPracticalCheckins();
-  return checkins
-    .filter((c) => {
-      const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
-      return cUid === uIdNorm;
-    })
-    .map((c) => Number(c.weekNumber))
-    .filter((w) => !isNaN(w));
+  if (!userId) {
+    return Array.from(new Set(checkins.map((c) => Number(c.weekNumber)).filter((w) => !isNaN(w))));
+  }
+  const uIdNorm = String(userId).trim().toLowerCase();
+  return Array.from(
+    new Set(
+      checkins
+        .filter((c) => {
+          const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
+          return !cUid || cUid === uIdNorm;
+        })
+        .map((c) => Number(c.weekNumber))
+        .filter((w) => !isNaN(w))
+    )
+  );
 }
 
 /**

@@ -396,6 +396,7 @@ function TraineeDashboardContent() {
   const [weeks, setWeeks]             = useState<ApiWeek[]>([]);
   const [progress, setProgress]       = useState<Progress[]>([]);
   const [passedWeekIds, setPassedWeekIds] = useState<Set<string>>(new Set());
+  const [userPracticalWeeks, setUserPracticalWeeks] = useState<number[]>([]);
   const [idMeta, setIdMeta]           = useState<IdMeta | null>(null);
   const [ready, setReady]             = useState(false);
   const searchParams = useSearchParams();
@@ -1019,8 +1020,14 @@ function TraineeDashboardContent() {
           }
         } catch {}
 
-        // Sync verified practical checkins from server
-        await fetchAndSyncUserPracticalCheckins(user.id);
+        // Sync verified practical checkins from server for current user
+        const effUid = uid || user?.id || user?._id || payload.userId || "";
+        if (effUid) {
+          const userCheckins = await fetchAndSyncUserPracticalCheckins(effUid);
+          const syncedWeeks = userCheckins.map((c) => Number(c.weekNumber)).filter((w) => !isNaN(w));
+          const localWeeks = getUserPracticalCheckinWeeks(effUid);
+          setUserPracticalWeeks(Array.from(new Set([...syncedWeeks, ...localWeeks])));
+        }
 
         // Always check cooperative membership status in the background
         // A 404 here just means the user is not a cooperative member.
@@ -1191,8 +1198,8 @@ function TraineeDashboardContent() {
     // Enforce practical attendance link for non-staff users:
     const isStaff = userRole === "admin" || userRole === "trainer" || userRole === "lead_trainer";
     if (!isStaff && prevWeek.weekNumber) {
-      const checkedInWeeks = getUserPracticalCheckinWeeks(userId);
-      const prevPracticalDone = checkedInWeeks.includes(prevWeek.weekNumber);
+      const activePracticalWeeks = userPracticalWeeks.length > 0 ? userPracticalWeeks : getUserPracticalCheckinWeeks(userId);
+      const prevPracticalDone = activePracticalWeeks.includes(prevWeek.weekNumber);
       if (!prevPracticalDone) return false;
     }
 
@@ -2088,7 +2095,8 @@ function TraineeDashboardContent() {
 
                   const isStaff = userRole === "admin" || userRole === "trainer" || userRole === "lead_trainer";
                   const prevWeek = i > 0 ? weeks[i - 1] : null;
-                  const isPrevPracticalMissing = !isStaff && prevWeek && prevWeek.weekNumber && !getUserPracticalCheckinWeeks(userId).includes(prevWeek.weekNumber);
+                  const activePracticalWeeks = userPracticalWeeks.length > 0 ? userPracticalWeeks : getUserPracticalCheckinWeeks(userId);
+                  const isPrevPracticalMissing = !isStaff && prevWeek && prevWeek.weekNumber && !activePracticalWeeks.includes(prevWeek.weekNumber);
 
                   return (
                     <button
