@@ -354,7 +354,7 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
                   : "bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25]"
               }`}
             >
-              {quizPassed ? "Review Quiz Results →" : quizAttempted ? "Retake Weekly Quiz →" : "Take Weekly Quiz Now →"}
+              {quizPassed ? "Quiz Passed (70%+) ✓" : quizAttempted ? "Retake Weekly Quiz →" : "Take Weekly Quiz Now →"}
             </button>
           ) : (
             <button
@@ -453,9 +453,9 @@ function OverviewPanel({ week, completedCount, totalCount, nextUnlockedLessonInd
 }
 
 // ─── Quiz Panel ───────────────────────────────────────────────────────────────
-function QuizPanel({ quiz, userId, weekId, cohortId, onPassed, allDone = true, completedCount = 0, totalCount = 0 }: {
+function QuizPanel({ quiz, userId, weekId, cohortId, onPassed, quizPassed = false, allDone = true, completedCount = 0, totalCount = 0 }: {
   quiz: Quiz; userId: string; weekId: string; cohortId: string; onPassed: () => void;
-  allDone?: boolean; completedCount?: number; totalCount?: number;
+  quizPassed?: boolean; allDone?: boolean; completedCount?: number; totalCount?: number;
 }) {
   const [answers, setAnswers]     = useState<Record<string, number>>({});
   const [result, setResult]       = useState<{ score: number; passed: boolean; correct: number; total: number } | null>(null);
@@ -468,6 +468,10 @@ function QuizPanel({ quiz, userId, weekId, cohortId, onPassed, allDone = true, c
   const effectiveCohortId = cohortId || (quiz as any)?.cohortId || "";
 
   const submit = async () => {
+    if (quizPassed) {
+      setError("You have already passed this quiz. Retakes are blocked once passed.");
+      return;
+    }
     if (!allDone) {
       setError("You must complete all lessons in this week before taking the quiz.");
       return;
@@ -517,6 +521,29 @@ function QuizPanel({ quiz, userId, weekId, cohortId, onPassed, allDone = true, c
       setSubmitting(false);
     }
   };
+
+  if (quizPassed) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-8 py-12 text-center relative z-10 bg-white">
+        <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-3xl mb-4 shadow-xs">
+          ✅
+        </div>
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider mb-2">
+          Quiz Completed & Passed
+        </div>
+        <h2 className="text-2xl font-black text-slate-900 mb-2">{quiz.title} Passed!</h2>
+        <p className="text-slate-600 text-sm max-w-md mb-6 leading-relaxed font-medium">
+          You have already passed this weekly quiz with a passing score (70%+). Retakes are blocked once you have passed.
+        </p>
+        <Link
+          href="/learn/lms/dashboard"
+          className="px-6 py-3 bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] text-sm font-extrabold rounded-xl transition shadow-xs"
+        >
+          Return to Dashboard →
+        </Link>
+      </div>
+    );
+  }
 
   if (result) return (
     <div className="flex flex-col items-center justify-center h-full px-8 py-12 text-center relative z-10">
@@ -1709,10 +1736,42 @@ export default function WeekPage() {
         </aside>
         <main className="flex-1 overflow-hidden bg-transparent">
           {showQuiz && quiz ? (
-            allDone ? (
+            quizPassed ? (
+              <div className="flex flex-col items-center justify-center h-full px-6 py-12 text-center bg-white">
+                <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-3xl mb-4 shadow-xs">
+                  ✅
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider mb-2">
+                  Completed & Passed
+                </div>
+                <h2 className="text-xl font-black text-[#002d25] mb-2">{quiz.title} Passed!</h2>
+                <p className="text-slate-600 text-sm max-w-md mb-6 leading-relaxed font-medium">
+                  You have already passed this weekly quiz with a score of 70% or higher. Retakes are not allowed once passed.
+                </p>
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setShowQuiz(false);
+                      setViewingOverview(true);
+                      setMobilePanel("overview");
+                    }}
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    View Week Overview
+                  </button>
+                  <Link
+                    href="/learn/lms/dashboard"
+                    className="px-5 py-2.5 bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] font-extrabold text-xs rounded-xl transition shadow-xs"
+                  >
+                    Go to Dashboard →
+                  </Link>
+                </div>
+              </div>
+            ) : allDone ? (
               <QuizPanel
                 quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
                 allDone={allDone} completedCount={weekCompletedCount} totalCount={lessons.length}
+                quizPassed={quizPassed}
                 onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
               />
             ) : (
@@ -1847,10 +1906,30 @@ export default function WeekPage() {
             </div>
           )}
           {mobilePanel === "quiz" && quiz && (
-            allDone ? (
+            quizPassed ? (
+              <div className="flex flex-col items-center justify-center h-full px-6 py-12 text-center bg-white">
+                <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-3xl mb-4 shadow-xs">
+                  ✅
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider mb-2">
+                  Completed & Passed
+                </div>
+                <h2 className="text-xl font-black text-[#002d25] mb-2">{quiz.title} Passed!</h2>
+                <p className="text-slate-600 text-sm max-w-md mb-6 leading-relaxed font-medium">
+                  You have already passed this weekly quiz with a score of 70% or higher. Retakes are not allowed once passed.
+                </p>
+                <Link
+                  href="/learn/lms/dashboard"
+                  className="px-5 py-2.5 bg-[#00D1C1] hover:bg-[#00b8aa] text-[#002d25] font-extrabold text-xs rounded-xl transition shadow-xs"
+                >
+                  Go to Dashboard →
+                </Link>
+              </div>
+            ) : allDone ? (
               <QuizPanel
                 quiz={quiz} userId={userId} weekId={week.id} cohortId={cohortId || quiz.cohortId || week?.cohortId || ""}
                 allDone={allDone} completedCount={weekCompletedCount} totalCount={lessons.length}
+                quizPassed={quizPassed}
                 onPassed={() => { setQuizPassed(true); setTimeout(() => router.push("/learn/lms/dashboard"), 2000); }}
               />
             ) : (

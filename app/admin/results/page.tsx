@@ -44,16 +44,51 @@ interface ExamSession {
 
 function UserResultsModal({
   user,
-  quizAttempts,
+  quizAttempts: initialAttempts,
   examSessions,
   onClose,
+  onDeleteAttempt,
 }: {
   user: User;
   quizAttempts: QuizAttempt[];
   examSessions: ExamSession[];
   onClose: () => void;
+  onDeleteAttempt?: (attemptId: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"quiz" | "exam">("quiz");
+  const [attempts, setAttempts] = useState<QuizAttempt[]>(initialAttempts);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAttempts(initialAttempts);
+  }, [initialAttempts]);
+
+  const handleDeleteAttempt = async (attempt: QuizAttempt) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete this attempt for "${attempt.quizTitle}" (Score: ${attempt.score}%)?\n\nThis will remove this specific attempt record permanently.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(attempt.attemptId);
+    try {
+      const res = await authFetch(`/lms/quizzes/admin/attempts/${attempt.attemptId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to delete quiz attempt");
+      }
+      setAttempts((prev) => prev.filter((a) => a.attemptId !== attempt.attemptId));
+      onDeleteAttempt?.(attempt.attemptId);
+    } catch (err: any) {
+      alert(err?.message || "Failed to delete attempt");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-8">
@@ -82,13 +117,13 @@ function UserResultsModal({
         {/* Body */}
         <div className="p-6 flex-1 overflow-hidden flex flex-col gap-6">
           {/* Missing quizzes system check alert */}
-          {quizAttempts.filter((a) => a.passed).length < 5 && (
+          {attempts.filter((a) => a.passed).length < 5 && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 text-xs font-medium">
               <span className="text-xl shrink-0 mt-0.5">⚠️</span>
               <div>
                 <p className="font-bold text-amber-950">Incomplete Weeks 1–5 Quizzes System Check</p>
                 <p className="text-amber-800 text-[11px] mt-0.5 leading-relaxed">
-                  This trainee has passed <strong className="font-bold text-amber-950">{quizAttempts.filter((a) => a.passed).length} of 5</strong> required quizzes from Weeks 1–5. The LMS now automatically prompts them and prevents advancing to future lessons until missing quizzes are taken and passed.
+                  This trainee has passed <strong className="font-bold text-amber-950">{attempts.filter((a) => a.passed).length} of 5</strong> required quizzes from Weeks 1–5. The LMS now automatically prompts them and prevents advancing to future lessons until missing quizzes are taken and passed.
                 </p>
               </div>
             </div>
@@ -98,17 +133,17 @@ function UserResultsModal({
           <div className="flex flex-wrap gap-2 flex-shrink-0">
             <button
               onClick={() => setActiveTab("quiz")}
-              className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition ${
+              className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition cursor-pointer ${
                 activeTab === "quiz"
                   ? "bg-emerald-600 text-white shadow-md"
                   : "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"
               }`}
             >
-              Quiz Attempts ({quizAttempts.length})
+              Quiz Attempts ({attempts.length})
             </button>
             <button
               onClick={() => setActiveTab("exam")}
-              className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition ${
+              className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition cursor-pointer ${
                 activeTab === "exam"
                   ? "bg-emerald-600 text-white shadow-md"
                   : "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"
@@ -128,17 +163,18 @@ function UserResultsModal({
                     <th className="py-3 px-4">Score</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Attempted At</th>
+                    <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {quizAttempts.length === 0 ? (
+                  {attempts.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-sm text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                      <td colSpan={5} className="py-8 text-center text-sm text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
                         No quiz attempts found.
                       </td>
                     </tr>
                   ) : (
-                    quizAttempts.map((attempt) => (
+                    attempts.map((attempt) => (
                       <tr key={attempt.attemptId} className="bg-white hover:bg-slate-50 transition group border-b border-slate-200">
                         <td className="py-4 px-4 text-sm text-slate-900 font-bold rounded-l-xl border-y border-l border-slate-200">{attempt.quizTitle}</td>
                         <td className="py-4 px-4 text-sm text-slate-800 font-semibold border-y border-slate-200">{attempt.score}%</td>
@@ -149,8 +185,18 @@ function UserResultsModal({
                             {attempt.passed ? "Passed" : "Failed"}
                           </span>
                         </td>
-                        <td className="py-4 px-4 text-sm text-slate-500 rounded-r-xl border-y border-r border-slate-200 font-medium">
+                        <td className="py-4 px-4 text-sm text-slate-500 border-y border-slate-200 font-medium">
                           {new Date(attempt.attemptedAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                        <td className="py-4 px-4 text-sm text-right rounded-r-xl border-y border-r border-slate-200">
+                          <button
+                            onClick={() => handleDeleteAttempt(attempt)}
+                            disabled={deletingId === attempt.attemptId}
+                            className="px-2.5 py-1 text-xs font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 border border-rose-200 rounded-lg transition cursor-pointer disabled:opacity-50"
+                            title="Delete this attempt"
+                          >
+                            {deletingId === attempt.attemptId ? "Deleting..." : "🗑️ Delete"}
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -463,6 +509,9 @@ export default function AdminResultsPage() {
           quizAttempts={selectedUserQuizzes}
           examSessions={selectedUserExams}
           onClose={() => setSelectedUserId(null)}
+          onDeleteAttempt={(attemptId) => {
+            setQuizAttempts((prev) => prev.filter((a) => a.attemptId !== attemptId));
+          }}
         />
       )}
 
