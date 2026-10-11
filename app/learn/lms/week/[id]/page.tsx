@@ -1095,6 +1095,11 @@ export default function WeekPage() {
   const [userId, setUserId]           = useState("");
   const [cohortId, setCohortId]       = useState("");
   const [isPracticalPresent, setIsPracticalPresent] = useState<boolean>(true);
+  const [blockingMissingQuiz, setBlockingMissingQuiz] = useState<{
+    weekId: string;
+    weekNumber: number;
+    weekTitle: string;
+  } | null>(null);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState("");
 
@@ -1167,6 +1172,7 @@ export default function WeekPage() {
         });
 
         // Fetch progress
+        const completedLessonIds = new Set<string>();
         const progressRes = await authFetch(`/lms/progress/${payload.userId}`);
         if (progressRes.ok) {
           const progressData = await progressRes.json();
@@ -1178,7 +1184,6 @@ export default function WeekPage() {
             ? progressData.progress
             : [];
 
-          const ids = new Set<string>();
           progressArr.forEach((p: any) => {
             const isCompleted =
               p.completed === true ||
@@ -1188,11 +1193,11 @@ export default function WeekPage() {
               Boolean(p.completedAt);
 
             if (isCompleted && p.lessonId) {
-              ids.add(p.lessonId);
+              completedLessonIds.add(p.lessonId);
             }
           });
 
-          setCompletedIds(ids);
+          setCompletedIds(completedLessonIds);
         }
 
         // Fetch quiz for this week (try both endpoints with flexible schema parsing)
@@ -1269,6 +1274,80 @@ export default function WeekPage() {
             setLoading(false);
             return;
           }
+
+          // System check for missing/skipped quizzes from earlier weeks (Weeks 1 to 5, or any completed week)
+          // If lessons for prior Week J were taken, trainee CANNOT proceed until Week J quiz is passed!
+          try {
+            const [allWeeksRes, passedRes] = await Promise.all([
+              authFetch("/lms/weeks"),
+              authFetch(`/lms/quizzes/user/${effUid}/passed`),
+            ]);
+
+            if (allWeeksRes.ok) {
+              const allWeeksData = await allWeeksRes.json();
+              const allWeeksList: Week[] = Array.isArray(allWeeksData)
+                ? allWeeksData
+                : Array.isArray(allWeeksData?.data)
+                ? allWeeksData.data
+                : [];
+              allWeeksList.sort((a, b) => a.weekNumber - b.weekNumber);
+
+              let passedWeekIds = new Set<string>();
+              if (passedRes.ok) {
+                const passedData = await passedRes.json();
+                const pArr = Array.isArray(passedData?.passedWeekIds)
+                  ? passedData.passedWeekIds
+                  : Array.isArray(passedData?.data?.passedWeekIds)
+                  ? passedData.data.passedWeekIds
+                  : [];
+                passedWeekIds = new Set(pArr);
+              }
+
+              for (const pw of allWeeksList) {
+                if (pw.weekNumber < weekData.weekNumber) {
+                  const pwLessons = pw.lessons || [];
+                  const pwLessonsDone = pwLessons.length > 0 && pwLessons.every((l) => completedLessonIds.has(l.id));
+
+                  if (pwLessonsDone && !passedWeekIds.has(pw.id)) {
+                    let hasQuiz = pw.requiresQuizPass || (pw.weekNumber >= 1 && pw.weekNumber <= 5);
+                    try {
+                      const qRes = await authFetch(`/lms/quizzes/week/${pw.id}`);
+                      if (qRes.ok) {
+                        const qData = await qRes.json();
+                        const qList = Array.isArray(qData)
+                          ? qData
+                          : Array.isArray(qData?.data)
+                          ? qData.data
+                          : Array.isArray(qData?.quizzes)
+                          ? qData.quizzes
+                          : [];
+                        const pubQuiz = qList.find((q: any) => q.isPublished !== false);
+                        if (pubQuiz) {
+                          hasQuiz = true;
+                        } else if (qList.length === 0 && !hasQuiz) {
+                          hasQuiz = false;
+                        }
+                      }
+                    } catch {
+                      // fallback
+                    }
+
+                    if (hasQuiz) {
+                      setBlockingMissingQuiz({
+                        weekId: pw.id,
+                        weekNumber: pw.weekNumber,
+                        weekTitle: pw.title,
+                      });
+                      setLoading(false);
+                      return;
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Error verifying prior week quiz requirements:", e);
+          }
         }
         setIsPracticalPresent(true);
       } catch {
@@ -1333,6 +1412,54 @@ export default function WeekPage() {
       Loading week...
     </div>
   );
+
+  if (blockingMissingQuiz) {
+    return (
+      <div className="min-h-screen bg-[#f4faf7] flex items-center justify-center p-4 relative overflow-hidden font-sora">
+        <div 
+          className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+          style={{ 
+            backgroundImage: "url('/learn/training/greenSubtract.png')", 
+            backgroundSize: '120px', 
+            backgroundRepeat: 'repeat' 
+          }} 
+        />
+        <div className="bg-white rounded-3xl border border-rose-200/90 p-8 max-w-md w-full shadow-2xl text-center space-y-4 relative z-10">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center text-3xl mx-auto shadow-inner">
+            ⚠️
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[11px] font-black uppercase tracking-wider">
+            Prior Quiz Required
+          </div>
+          <h2 className="text-xl font-black text-slate-900 leading-snug">
+            Week {blockingMissingQuiz.weekNumber} Quiz Incomplete
+          </h2>
+          <p className="text-slate-600 text-xs leading-relaxed font-medium">
+            Our system detected that you completed the lessons for{" "}
+            <strong className="text-slate-900 font-bold">Week {blockingMissingQuiz.weekNumber} ({blockingMissingQuiz.weekTitle})</strong>, but skipped or haven&apos;t passed its weekly assessment quiz.
+          </p>
+          <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200/80 text-[11px] text-amber-900 text-left font-medium leading-relaxed">
+            🔒 <strong className="font-bold">Progression Lock:</strong> You cannot move forward to Week {week?.weekNumber || ""} until all earlier quizzes have been taken and passed with a score of 70% or higher.
+          </div>
+          
+          <div className="pt-2 flex flex-col gap-2.5">
+            <Link
+              href={`/learn/lms/week/${blockingMissingQuiz.weekId}?quiz=1`}
+              className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl transition shadow-md flex items-center justify-center gap-2"
+            >
+              📝 Take Week {blockingMissingQuiz.weekNumber} Quiz Now →
+            </Link>
+            <Link
+              href="/learn/lms/dashboard"
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+            >
+              ← Return to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error || !week) return (
     <div className="min-h-screen bg-[#f4faf7] flex flex-col items-center justify-center gap-4 p-6 relative overflow-hidden font-sora">

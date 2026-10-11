@@ -81,6 +81,19 @@ function UserResultsModal({
 
         {/* Body */}
         <div className="p-6 flex-1 overflow-hidden flex flex-col gap-6">
+          {/* Missing quizzes system check alert */}
+          {quizAttempts.filter((a) => a.passed).length < 5 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 text-xs font-medium">
+              <span className="text-xl shrink-0 mt-0.5">⚠️</span>
+              <div>
+                <p className="font-bold text-amber-950">Incomplete Weeks 1–5 Quizzes System Check</p>
+                <p className="text-amber-800 text-[11px] mt-0.5 leading-relaxed">
+                  This trainee has passed <strong className="font-bold text-amber-950">{quizAttempts.filter((a) => a.passed).length} of 5</strong> required quizzes from Weeks 1–5. The LMS now automatically prompts them and prevents advancing to future lessons until missing quizzes are taken and passed.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Toggles */}
           <div className="flex flex-wrap gap-2 flex-shrink-0">
             <button
@@ -202,6 +215,7 @@ export default function AdminResultsPage() {
   const [examSessions, setExamSessions] = useState<ExamSession[]>([]);
   
   const [search, setSearch] = useState("");
+  const [filterMode, setFilterMode] = useState<"activity" | "skipped_w1_5" | "all">("activity");
   const [loading, setLoading] = useState(true);
   const [fetchingNewPage, setFetchingNewPage] = useState(false);
   const [error, setError] = useState("");
@@ -314,7 +328,7 @@ export default function AdminResultsPage() {
     [cohorts],
   );
 
-  const userStats = useMemo(() => {
+  const allUserStatsMap = useMemo(() => {
     const statsMap = new Map<string, {
       user: User;
       cohortName: string;
@@ -382,7 +396,17 @@ export default function AdminResultsPage() {
       stat.examsTaken++;
     }
 
-    let results = Array.from(statsMap.values()).filter((stat) => stat.quizzesTaken > 0 || stat.examsTaken > 0);
+    return statsMap;
+  }, [users, cohortMap, quizAttempts, examSessions]);
+
+  const userStats = useMemo(() => {
+    let results = Array.from(allUserStatsMap.values());
+
+    if (filterMode === "activity") {
+      results = results.filter((stat) => stat.quizzesTaken > 0 || stat.examsTaken > 0);
+    } else if (filterMode === "skipped_w1_5") {
+      results = results.filter((stat) => stat.quizzesPassed < 5);
+    }
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -394,7 +418,7 @@ export default function AdminResultsPage() {
     }
 
     return results;
-  }, [users, cohortMap, quizAttempts, examSessions, search]);
+  }, [allUserStatsMap, filterMode, search]);
 
   const totalPages = Math.max(1, Math.ceil(userStats.length / pageSize));
   const paginatedUserStats = useMemo(() => {
@@ -402,11 +426,15 @@ export default function AdminResultsPage() {
     return userStats.slice(start, start + pageSize);
   }, [userStats, currentPage, pageSize]);
 
-  const stats = useMemo(() => ({
-    quizAttempts: quizAttempts.length,
-    examSessions: examSessions.length,
-    usersActive: userStats.filter(s => s.quizzesTaken > 0 || s.examsTaken > 0).length,
-  }), [quizAttempts, examSessions, userStats]);
+  const stats = useMemo(() => {
+    const all = Array.from(allUserStatsMap.values());
+    return {
+      quizAttempts: quizAttempts.length,
+      examSessions: examSessions.length,
+      usersActive: all.filter((s) => s.quizzesTaken > 0 || s.examsTaken > 0).length,
+      skippedW1to5: all.filter((s) => s.quizzesPassed < 5).length,
+    };
+  }, [quizAttempts, examSessions, allUserStatsMap]);
 
   const selectedUser = useMemo(() => {
     if (!selectedUserId) return null;
@@ -450,9 +478,31 @@ export default function AdminResultsPage() {
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
+            <div 
+              onClick={() => { setFilterMode("activity"); setCurrentPage(1); }}
+              className={`rounded-3xl border px-4 py-3 text-sm shadow-sm cursor-pointer transition ${
+                filterMode === "activity"
+                  ? "border-emerald-300 bg-emerald-50/50 ring-2 ring-emerald-400"
+                  : "border-slate-200 bg-white hover:border-slate-300"
+              }`}
+            >
               <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">Active Trainees</p>
               <p className="text-lg font-black text-slate-900">{stats.usersActive}</p>
+            </div>
+            <div 
+              onClick={() => { setFilterMode(filterMode === "skipped_w1_5" ? "activity" : "skipped_w1_5"); setCurrentPage(1); }}
+              className={`rounded-3xl border px-4 py-3 text-sm shadow-sm cursor-pointer transition ${
+                filterMode === "skipped_w1_5"
+                  ? "border-rose-300 bg-rose-50/80 ring-2 ring-rose-400"
+                  : "border-amber-200 bg-amber-50/30 hover:border-rose-300"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-xs">⚠️</span>
+                <p className="text-rose-700 text-[10px] uppercase tracking-widest font-bold">Incomplete W1–5</p>
+              </div>
+              <p className="text-lg font-black text-rose-900">{stats.skippedW1to5}</p>
+              <p className="text-[10px] text-rose-600 font-semibold mt-0.5">Click to check →</p>
             </div>
             <div className="rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm flex flex-col justify-between">
               <div>
@@ -510,23 +560,61 @@ export default function AdminResultsPage() {
         )}
 
         <div className="rounded-[2rem] border border-slate-200 bg-white p-6 lg:p-8 shadow-sm">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold text-slate-900">All Trainees</h2>
-              {fetchingNewPage && (
-                <span className="text-xs text-emerald-600 font-semibold animate-pulse">Updating...</span>
-              )}
+          <div className="flex flex-col gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-bold text-slate-900">
+                  {filterMode === "skipped_w1_5" ? "System Check: Skipped/Incomplete W1–5 Quizzes" : "All Trainees"}
+                </h2>
+                {fetchingNewPage && (
+                  <span className="text-xs text-emerald-600 font-semibold animate-pulse">Updating...</span>
+                )}
+              </div>
+              <div className="w-full sm:max-w-md">
+                <input
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Search by name or email..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-600 transition"
+                />
+              </div>
             </div>
-            <div className="w-full sm:max-w-md">
-              <input
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                placeholder="Search by name or email..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-600 transition"
-              />
+
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+              <button
+                onClick={() => { setFilterMode("activity"); setCurrentPage(1); }}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  filterMode === "activity"
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                With Activity ({stats.usersActive})
+              </button>
+              <button
+                onClick={() => { setFilterMode("skipped_w1_5"); setCurrentPage(1); }}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  filterMode === "skipped_w1_5"
+                    ? "bg-rose-600 text-white shadow-xs"
+                    : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
+                }`}
+              >
+                <span>⚠️</span> Skipped/Incomplete Quizzes W1–5 ({stats.skippedW1to5})
+              </button>
+              <button
+                onClick={() => { setFilterMode("all"); setCurrentPage(1); }}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  filterMode === "all"
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                All Registered Trainees ({users.length})
+              </button>
             </div>
           </div>
 
@@ -592,14 +680,18 @@ export default function AdminResultsPage() {
                         <span className="font-bold text-slate-900">{stat.quizzesTaken}</span>
                       </td>
                       <td className="py-4 px-6 text-sm border-b border-slate-200">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold ${
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-wider font-bold ${
                           stat.quizzesTaken === 0
-                            ? "bg-amber-50 text-amber-700 border border-amber-200"
-                            : stat.quizzesPassed > 0
+                            ? "bg-amber-50 text-amber-800 border border-amber-200"
+                            : stat.quizzesPassed >= 5
                             ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                            : "bg-red-50 text-red-700 border border-red-200"
+                            : "bg-rose-50 text-rose-700 border border-rose-200"
                         }`}>
-                          {stat.quizzesTaken === 0 ? "Not Attempted" : `${stat.quizzesPassed} Passed`}
+                          {stat.quizzesTaken === 0
+                            ? "Not Attempted"
+                            : stat.quizzesPassed < 5
+                            ? `⚠️ ${stat.quizzesPassed}/5 Passed`
+                            : `✓ ${stat.quizzesPassed} Passed`}
                         </span>
                       </td>
                       <td className="py-4 px-6 text-sm border-b border-slate-200">

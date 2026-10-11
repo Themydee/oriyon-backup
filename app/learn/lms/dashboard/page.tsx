@@ -396,6 +396,7 @@ function TraineeDashboardContent() {
   const [weeks, setWeeks]             = useState<ApiWeek[]>([]);
   const [progress, setProgress]       = useState<Progress[]>([]);
   const [passedWeekIds, setPassedWeekIds] = useState<Set<string>>(new Set());
+  const [weekQuizzes, setWeekQuizzes] = useState<Map<string, { id: string; title: string }>>(new Map());
   const [userPracticalWeeks, setUserPracticalWeeks] = useState<number[]>([]);
   const [idMeta, setIdMeta]           = useState<IdMeta | null>(null);
   const [ready, setReady]             = useState(false);
@@ -1003,6 +1004,28 @@ function TraineeDashboardContent() {
                   .sort((a, b) => a.weekNumber - b.weekNumber)
               : []
           );
+
+          // Fetch published quizzes map for all published weeks
+          try {
+            const qMap = new Map<string, { id: string; title: string }>();
+            const publishedWeeks = Array.isArray(data) ? data.filter((w: any) => w.isPublished) : [];
+            await Promise.all(
+              publishedWeeks.map(async (w: any) => {
+                try {
+                  const qRes = await authFetch(`/lms/quizzes/week/${w.id}`);
+                  if (qRes.ok) {
+                    const qData = await qRes.json();
+                    const qList = Array.isArray(qData) ? qData : qData?.data || [];
+                    const pub = qList.find((q: any) => q.isPublished !== false);
+                    if (pub) {
+                      qMap.set(w.id, { id: pub.id, title: pub.title || `Week ${w.weekNumber} Assessment Quiz` });
+                    }
+                  }
+                } catch {}
+              })
+            );
+            setWeekQuizzes(qMap);
+          } catch {}
         }
 
         if (progressRes.ok) {
@@ -1010,19 +1033,19 @@ function TraineeDashboardContent() {
           setProgress(Array.isArray(progressData) ? progressData : []);
         }
 
-        try {
-          const passedRes = await authFetch(`/lms/quizzes/user/${user.id}/passed`);
-          if (passedRes.ok) {
-            const passedData = await passedRes.json();
-            if (Array.isArray(passedData.passedWeekIds)) {
-              setPassedWeekIds(new Set(passedData.passedWeekIds));
-            }
-          }
-        } catch {}
-
-        // Sync verified practical checkins from server for current user
         const effUid = uid || user?.id || user?._id || payload.userId || "";
         if (effUid) {
+          try {
+            const passedRes = await authFetch(`/lms/quizzes/user/${effUid}/passed`);
+            if (passedRes.ok) {
+              const passedData = await passedRes.json();
+              if (Array.isArray(passedData.passedWeekIds)) {
+                setPassedWeekIds(new Set(passedData.passedWeekIds));
+              }
+            }
+          } catch {}
+
+          // Sync verified practical checkins from server for current user
           const userCheckins = await fetchAndSyncUserPracticalCheckins(effUid);
           const syncedWeeks = userCheckins.map((c) => Number(c.weekNumber)).filter((w) => !isNaN(w));
           const localWeeks = getUserPracticalCheckinWeeks(effUid);
@@ -1203,8 +1226,41 @@ function TraineeDashboardContent() {
       if (!prevPracticalDone) return false;
     }
 
+    // 3. System check for skipped quizzes:
+    // If any prior week (especially Weeks 1 to 5, or any completed week) had lessons taken,
+    // the user CANNOT move forward to this week until all earlier quizzes have been passed!
+    if (!isStaff) {
+      for (let j = 0; j < index; j++) {
+        const priorWeek = weeks[j];
+        const lessonsDone = isWeekComplete(priorWeek);
+        const hasQuiz = weekQuizzes.has(priorWeek.id) || priorWeek.requiresQuizPass || (priorWeek.weekNumber >= 1 && priorWeek.weekNumber <= 5);
+        const quizPassed = passedWeekIds.has(priorWeek.id);
+        if (lessonsDone && hasQuiz && !quizPassed) {
+          return false;
+        }
+      }
+    }
+
     return true;
   };
+
+  const missingQuizzes = useMemo(() => {
+    const isStaff = userRole === "admin" || userRole === "trainer" || userRole === "lead_trainer";
+    if (isStaff) return [];
+    return (Array.isArray(weeks) ? weeks : [])
+      .filter((w) => {
+        const lessonsDone = isWeekComplete(w);
+        const hasQuiz = weekQuizzes.has(w.id) || w.requiresQuizPass || (w.weekNumber >= 1 && w.weekNumber <= 5);
+        const quizPassed = passedWeekIds.has(w.id);
+        return lessonsDone && hasQuiz && !quizPassed;
+      })
+      .map((w) => ({
+        weekId: w.id,
+        weekNumber: w.weekNumber,
+        weekTitle: w.title,
+        quizTitle: weekQuizzes.get(w.id)?.title || `Week ${w.weekNumber} Assessment Quiz`,
+      }));
+  }, [weeks, progress, passedWeekIds, weekQuizzes, userRole]);
 
   const completedWeeks   = useMemo(() => (Array.isArray(weeks) ? weeks : []).filter(isWeekComplete).length, [weeks, progress]);
   const completedLessons = useMemo(() => (Array.isArray(progress) ? progress : []).filter((p) => p.completed).length, [progress]);
@@ -1500,6 +1556,45 @@ function TraineeDashboardContent() {
         {/* ── OVERVIEW TAB ── */}
         {activeTab === "overview" && (
           <div className="space-y-6">
+
+            {/* MISSING QUIZZES ALERT (WEEKS 1 - 5 & EARLIER COMPLETED WEEKS) */}
+            {missingQuizzes.length > 0 && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 md:p-6 shadow-sm font-sora">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-2xl flex-shrink-0">
+                    ⚠️
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 bg-amber-200/80 px-2.5 py-0.5 rounded-full border border-amber-300">
+                      Action Required · Incomplete Quizzes
+                    </span>
+                    <h3 className="text-lg md:text-xl font-black text-amber-950 mt-1">
+                      You Have {missingQuizzes.length === 1 ? "1 Missing Weekly Quiz" : `${missingQuizzes.length} Missing Weekly Quizzes`}
+                    </h3>
+                    <p className="text-xs md:text-sm text-amber-900/90 mt-1 leading-relaxed font-medium">
+                      Our system detected that you completed the lessons for {missingQuizzes.map((q) => `Week ${q.weekNumber}`).join(", ")} but skipped the weekly quiz. <strong>You cannot move forward to subsequent lessons until all skipped quizzes are taken and passed (70%+ passing score).</strong>
+                    </p>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {missingQuizzes.map((q) => (
+                        <div key={q.weekId} className="bg-white border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-[#002d25] truncate">Week {q.weekNumber}: {q.quizTitle}</p>
+                            <p className="text-[10px] text-amber-700 font-bold mt-0.5">Lessons Done ✓ · Quiz Required 🔒</p>
+                          </div>
+                          <Link
+                            href={`/learn/lms/week/${q.weekId}?quiz=1`}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition whitespace-nowrap shadow-xs cursor-pointer flex-shrink-0"
+                          >
+                            Take Quiz →
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ── SOCIAL FOLLOW BANNER ── */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-6 py-6 rounded-3xl bg-white border border-[#e2e8f0] relative overflow-hidden shadow-sm">
@@ -2038,6 +2133,45 @@ function TraineeDashboardContent() {
         {activeTab === "curriculum" && (
           <div className="space-y-6">
 
+            {/* MISSING QUIZZES ALERT (WEEKS 1 - 5 & EARLIER COMPLETED WEEKS) */}
+            {missingQuizzes.length > 0 && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 md:p-6 shadow-sm font-sora">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-2xl flex-shrink-0">
+                    ⚠️
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-800 bg-amber-200/80 px-2.5 py-0.5 rounded-full border border-amber-300">
+                      Action Required · Incomplete Quizzes
+                    </span>
+                    <h3 className="text-lg md:text-xl font-black text-amber-950 mt-1">
+                      You Have {missingQuizzes.length === 1 ? "1 Missing Weekly Quiz" : `${missingQuizzes.length} Missing Weekly Quizzes`}
+                    </h3>
+                    <p className="text-xs md:text-sm text-amber-900/90 mt-1 leading-relaxed font-medium">
+                      Our system detected that you completed lessons for {missingQuizzes.map((q) => `Week ${q.weekNumber}`).join(", ")} but have not passed the weekly quiz. <strong>You cannot move forward to subsequent lessons until all skipped quizzes are completed and passed.</strong>
+                    </p>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {missingQuizzes.map((q) => (
+                        <div key={q.weekId} className="bg-white border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-[#002d25] truncate">Week {q.weekNumber}: {q.quizTitle}</p>
+                            <p className="text-[10px] text-amber-700 font-bold mt-0.5">Lessons Done ✓ · Quiz Required 🔒</p>
+                          </div>
+                          <Link
+                            href={`/learn/lms/week/${q.weekId}?quiz=1`}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition whitespace-nowrap shadow-xs cursor-pointer flex-shrink-0"
+                          >
+                            Take Quiz →
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Curriculum header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -2097,12 +2231,19 @@ function TraineeDashboardContent() {
                   const prevWeek = i > 0 ? weeks[i - 1] : null;
                   const activePracticalWeeks = userPracticalWeeks.length > 0 ? userPracticalWeeks : getUserPracticalCheckinWeeks(userId);
                   const isPrevPracticalMissing = !isStaff && prevWeek && prevWeek.weekNumber && !activePracticalWeeks.includes(prevWeek.weekNumber);
+                  const priorMissingQuiz = !isStaff ? missingQuizzes.find((mq) => mq.weekNumber < week.weekNumber) : null;
 
                   return (
                     <button
                       key={week.id}
-                      onClick={() => unlocked && router.push(`/learn/lms/week/${week.id}`)}
-                      disabled={!unlocked}
+                      onClick={() => {
+                        if (priorMissingQuiz) {
+                          router.push(`/learn/lms/week/${priorMissingQuiz.weekId}?quiz=1`);
+                        } else if (unlocked) {
+                          router.push(`/learn/lms/week/${week.id}`);
+                        }
+                      }}
+                      disabled={!unlocked && !priorMissingQuiz}
                       className={`relative text-left rounded-3xl border p-5 transition-all duration-200 cursor-pointer ${
                         completed
                           ? "bg-white border-green-500/30 hover:border-green-500/50 shadow-md"
@@ -2110,7 +2251,7 @@ function TraineeDashboardContent() {
                             ? "bg-white border-green-500 ring-1 ring-green-300 hover:border-green-600 shadow-md"
                             : unlocked
                               ? "bg-white border-slate-200 hover:border-slate-350 hover:bg-slate-50/50 shadow-sm"
-                              : "bg-slate-50/50 border-slate-100 opacity-50 cursor-not-allowed"
+                              : "bg-slate-50/50 border-slate-100 opacity-60 cursor-not-allowed"
                       }`}
                     >
                       {isCurrent && (
@@ -2131,17 +2272,25 @@ function TraineeDashboardContent() {
                               ? "bg-green-50 text-green-700"
                               : unlocked
                                 ? "bg-slate-100 text-slate-500"
-                                : isPrevPracticalMissing
+                                : priorMissingQuiz
                                   ? "bg-amber-100 text-amber-800 border border-amber-300"
-                                  : "bg-slate-100 text-slate-400"
+                                  : isPrevPracticalMissing
+                                    ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                    : "bg-slate-100 text-slate-400"
                         }`}>
-                          {completed ? "✓ Done" : isCurrent ? "In progress" : unlocked ? "Open" : isLockedByDate ? "🔒 Locked" : isPrevPracticalMissing ? `🔒 Practical W${prevWeek?.weekNumber} Needed` : "🔒"}
+                          {completed ? "✓ Done" : isCurrent ? "In progress" : unlocked ? "Open" : isLockedByDate ? "🔒 Locked" : priorMissingQuiz ? `🔒 W${priorMissingQuiz.weekNumber} Quiz Needed` : isPrevPracticalMissing ? `🔒 Practical W${prevWeek?.weekNumber} Needed` : "🔒"}
                         </span>
                       </div>
 
                       <h3 className="text-sm font-bold text-slate-800 leading-snug mb-3">{week.title}</h3>
 
-                      {!unlocked && isPrevPracticalMissing && (
+                      {!unlocked && priorMissingQuiz && (
+                        <p className="text-[11px] text-amber-700 font-bold mb-3 flex items-center gap-1">
+                          <span>⚠️</span> Pass Week {priorMissingQuiz.weekNumber} quiz to unlock
+                        </p>
+                      )}
+
+                      {!unlocked && !priorMissingQuiz && isPrevPracticalMissing && (
                         <p className="text-[11px] text-amber-700 font-bold mb-3">
                           ⚠️ Attend Week {prevWeek?.weekNumber} practical to unlock
                         </p>
