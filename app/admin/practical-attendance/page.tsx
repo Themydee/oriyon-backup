@@ -145,7 +145,7 @@ export default function AdminPracticalAttendancePage() {
         const cData = await cohortRes.json();
         const cMembers = Array.isArray(cData?.members) ? cData.members : [];
         cMembers.forEach((cm: any) => {
-          const uId = cm.id || cm.userId || cm.user?.id;
+          const uId = cm.userId || cm.user?.id || cm.id;
           if (uId) {
             if (userMap.has(uId)) {
               const existing = userMap.get(uId)!;
@@ -169,6 +169,30 @@ export default function AdminPracticalAttendancePage() {
             }
           }
         });
+      }
+
+      // Enrich any users missing emails or names via /users
+      const usersMissingData = Array.from(userMap.values()).some((u) => !u.email || u.firstName === "Trainee");
+      if (usersMissingData) {
+        try {
+          const allUsersRes = await authFetch("/users?limit=1000");
+          if (allUsersRes.ok) {
+            const allUsersData = await allUsersRes.json();
+            const allList: any[] = Array.isArray(allUsersData) ? allUsersData : allUsersData?.users || allUsersData?.data || [];
+            allList.forEach((rawU) => {
+              const rId = rawU.id || rawU.userId;
+              if (rId && userMap.has(rId)) {
+                const cur = userMap.get(rId)!;
+                userMap.set(rId, {
+                  ...cur,
+                  firstName: rawU.firstName || cur.firstName,
+                  lastName: rawU.lastName || cur.lastName,
+                  email: rawU.email || cur.email,
+                });
+              }
+            });
+          }
+        } catch {}
       }
 
       const allUsers = Array.from(userMap.values());
@@ -360,6 +384,26 @@ export default function AdminPracticalAttendancePage() {
             norm === code2 || code2.endsWith(norm) || norm === code2.replace(`PRAC-W${selectedWeek}-`, "")
           );
         });
+      }
+
+      // Helpful check: If no match in selectedWeek, check if this code belongs to ANY trainee for another week!
+      if (!targetUser) {
+        for (const w of WEEK_OPTIONS) {
+          if (w === selectedWeek) continue;
+          const foundOther = users.find((u) => {
+            const c1 = normalizePracticalCode(generateUserUniquePracticalCode(u.id, w, u.email));
+            const c2 = normalizePracticalCode(generateUserUniquePracticalCode(u.id, w, ""));
+            return (
+              norm === c1 || c1.endsWith(norm) || norm === c1.replace(`PRAC-W${w}-`, "") ||
+              norm === c2 || c2.endsWith(norm) || norm === c2.replace(`PRAC-W${w}-`, "")
+            );
+          });
+          if (foundOther) {
+            setError(`⚠️ This code belongs to ${foundOther.firstName} ${foundOther.lastName} for WEEK ${w}! You currently have Week ${selectedWeek} selected. Please select Week ${w} from the dropdown to verify.`);
+            setSubmittingCode(false);
+            return;
+          }
+        }
       }
 
       if (!targetUser) {

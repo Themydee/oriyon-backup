@@ -151,6 +151,9 @@ function TraineePracticalAttendanceContent() {
         if (weekParam) {
           const wNum = Number(weekParam);
           if (wNum >= 1 && wNum <= 11) setSelectedWeek(wNum);
+        } else if (checkinWeekNums.length > 0) {
+          const nextPending = Array.from({ length: 11 }, (_, i) => i + 1).find((w) => !checkinWeekNums.includes(w));
+          if (nextPending) setSelectedWeek(nextPending);
         }
       } catch {
         setError("Failed to load practical attendance portal.");
