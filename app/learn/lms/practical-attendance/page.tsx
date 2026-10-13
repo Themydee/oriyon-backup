@@ -141,10 +141,10 @@ function TraineePracticalAttendanceContent() {
         const checkinWeekNums = syncedCheckins
           .filter((c) => {
             const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
-            return cUid === currentUserId.toLowerCase();
+            return !cUid || cUid === currentUserId.toLowerCase();
           })
-          .map((c) => Number(c.weekNumber))
-          .filter((w) => !isNaN(w));
+          .map((c) => Number(c.weekNumber ?? (c as any).week_number ?? (c as any).week))
+          .filter((w) => !isNaN(w) && w > 0);
         setCheckinWeeks(checkinWeekNums);
 
         const weekParam = searchParams?.get("week");
@@ -163,6 +163,38 @@ function TraineePracticalAttendanceContent() {
     };
     restore();
   }, []);
+
+  const [refreshingCheckins, setRefreshingCheckins] = useState(false);
+
+  const refreshCheckinStatus = async (uid = userId) => {
+    if (!uid) return;
+    setRefreshingCheckins(true);
+    try {
+      const synced = await fetchAndSyncUserPracticalCheckins(uid);
+      const uIdNorm = uid.trim().toLowerCase();
+      const checkinWeekNums = synced
+        .filter((c) => {
+          const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
+          return !cUid || cUid === uIdNorm;
+        })
+        .map((c) => Number(c.weekNumber ?? (c as any).week_number ?? (c as any).week))
+        .filter((w) => !isNaN(w) && w > 0);
+      setCheckinWeeks(checkinWeekNums);
+    } catch (e) {
+      console.warn("Error refreshing checkins", e);
+    } finally {
+      setRefreshingCheckins(false);
+    }
+  };
+
+  // Auto-poll every 6 seconds if selected week is not yet verified
+  useEffect(() => {
+    if (!userId || checkinWeeks.includes(selectedWeek)) return;
+    const interval = setInterval(() => {
+      refreshCheckinStatus(userId);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [userId, checkinWeeks, selectedWeek]);
 
   const generatedCode = generateUserUniquePracticalCode(userId, selectedWeek, userEmail);
   const isToday = isTodayGroupPracticalDay(practicalDay);
@@ -284,15 +316,28 @@ function TraineePracticalAttendanceContent() {
                 {isCheckedIn ? "Admin verified attendance for this week" : "Give this code to your admin at the field station"}
               </p>
             </div>
-            {isCheckedIn ? (
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 font-bold text-xs rounded-full border border-emerald-300">
-                ✓ Admin Verified
-              </span>
-            ) : (
-              <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold text-xs rounded-full border border-amber-300">
-                Pending Admin Submission
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {isCheckedIn ? (
+                <span className="px-3 py-1 bg-emerald-100 text-emerald-800 font-bold text-xs rounded-full border border-emerald-300">
+                  ✓ Admin Verified
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-amber-100 text-amber-800 font-bold text-xs rounded-full border border-amber-300">
+                    Pending Admin Submission
+                  </span>
+                  <button
+                    onClick={() => refreshCheckinStatus()}
+                    disabled={refreshingCheckins}
+                    title="Check if admin has verified your code"
+                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-lg border border-emerald-200 transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <span className={refreshingCheckins ? "animate-spin inline-block" : "inline-block"}>🔄</span>
+                    {refreshingCheckins ? "Checking..." : "Re-check"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Group Verification Code Display Box */}
@@ -315,10 +360,18 @@ function TraineePracticalAttendanceContent() {
               </p>
             </div>
           ) : (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
-              <p className="text-amber-800 text-xs font-bold">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p className="text-amber-800 text-xs font-bold text-left">
                 📱 Present this code to your trainer. Once submitted by your admin, Week {selectedWeek + 1} will unlock automatically.
               </p>
+              <button
+                onClick={() => refreshCheckinStatus()}
+                disabled={refreshingCheckins}
+                className="shrink-0 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-2xs flex items-center gap-1"
+              >
+                <span className={refreshingCheckins ? "animate-spin inline-block" : "inline-block"}>🔄</span>
+                {refreshingCheckins ? "Checking..." : "Check Status"}
+              </button>
             </div>
           )}
         </div>

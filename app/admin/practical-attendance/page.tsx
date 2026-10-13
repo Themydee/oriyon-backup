@@ -62,6 +62,7 @@ export default function AdminPracticalAttendancePage() {
   const [submittingCode, setSubmittingCode]         = useState(false);
   const [resettingAttendance, setResettingAttendance] = useState(false);
   const [activeTab, setActiveTab]                   = useState<"submit" | "matrix" | "group_codes">("submit");
+  const [searchQuery, setSearchQuery]               = useState("");
 
   // Role validation check (Admin / Trainer / Lead Trainer only)
   const userPayload = token ? (() => {
@@ -227,13 +228,14 @@ export default function AdminPracticalAttendancePage() {
     return checkins.some((c) => c.userId === userId && c.weekNumber === selectedWeek);
   };
 
-  const handleManualCheckinUser = async (targetUser: User, codeSubmitted: string) => {
+  const handleManualCheckinUser = async (targetUser: User, codeSubmitted: string, overrideCohortId?: string) => {
     const isUuid = (val: any) => typeof val === "string" && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
     const validVerifiedBy = isUuid(user?.id) ? user!.id : null;
+    const targetCohort = overrideCohortId || (targetUser as any).cohortId || selectedCohort;
 
     const newCheckin: PracticalCheckin = {
       id: `chk-admin-${Date.now()}`,
-      cohortId: selectedCohort,
+      cohortId: targetCohort,
       groupId: targetUser.groupId || "group-1",
       userId: targetUser.id,
       weekNumber: selectedWeek,
@@ -249,7 +251,7 @@ export default function AdminPracticalAttendancePage() {
       const res = await authFetch("/lms/practical/checkins", {
         method: "POST",
         body: JSON.stringify({
-          cohortId: selectedCohort,
+          cohortId: targetCohort,
           userId: targetUser.id,
           groupId: targetUser.groupId,
           weekNumber: selectedWeek,
@@ -348,6 +350,8 @@ export default function AdminPracticalAttendancePage() {
 
     try {
       let targetUser: User | undefined;
+      let targetCohortId = selectedCohort;
+      let targetCohortName = cohorts.find((c) => c.id === selectedCohort)?.name || "";
 
       // 1. Check rolling 60s pass if used
       targetUser = users.find((u) =>
@@ -374,7 +378,7 @@ export default function AdminPracticalAttendancePage() {
         }
       }
 
-      // 3. Direct lookup across all trainees in cohort using generateUserUniquePracticalCode
+      // 3. Direct lookup across all trainees in current cohort using generateUserUniquePracticalCode
       if (!targetUser) {
         targetUser = users.find((u) => {
           const code1 = normalizePracticalCode(generateUserUniquePracticalCode(u.id, selectedWeek, u.email));
@@ -386,7 +390,79 @@ export default function AdminPracticalAttendancePage() {
         });
       }
 
-      // Helpful check: If no match in selectedWeek, check if this code belongs to ANY trainee for another week!
+      // 4. Global lookup: Search across ALL system trainees via /users and across other cohorts!
+      if (!targetUser) {
+        try {
+          const allRes = await authFetch("/users?limit=2000");
+          if (allRes.ok) {
+            const allData = await allRes.json();
+            const allList: any[] = Array.isArray(allData) ? allData : allData?.users || allData?.data || [];
+
+            for (const rawU of allList) {
+              const uId = rawU.id || rawU.userId;
+              if (!uId) continue;
+              const uEmail = (rawU.email || "").trim();
+
+              const testCodes = [
+                generateUserUniquePracticalCode(uId, selectedWeek, uEmail),
+                generateUserUniquePracticalCode(uId, selectedWeek, ""),
+                generateUserUniquePracticalCode(uEmail, selectedWeek, uEmail),
+                generateUserUniquePracticalCode(uEmail, selectedWeek, ""),
+              ].map(normalizePracticalCode);
+
+              const match = testCodes.some(
+                (tc) => norm === tc || tc.endsWith(norm) || norm === tc.replace(`PRAC-W${selectedWeek}-`, "")
+              );
+
+              if (match) {
+                const uCohortId = rawU.cohortId || selectedCohort;
+                const foundC = cohorts.find((c) => c.id === uCohortId);
+                targetCohortId = uCohortId;
+                if (foundC) targetCohortName = foundC.name;
+
+                targetUser = {
+                  id: uId,
+                  firstName: rawU.firstName || "Trainee",
+                  lastName: rawU.lastName || "",
+                  email: uEmail,
+                  role: rawU.role || "trainee",
+                  groupId: rawU.groupId || "",
+                  groupName: rawU.groupName || rawU.assignedGroup || "Assigned Group",
+                  practicalDay: rawU.practicalDay || "Friday",
+                  cohortId: uCohortId,
+                } as any;
+                break;
+              }
+            }
+
+            // Check if code belongs to another week across all users
+            if (!targetUser) {
+              for (const w of WEEK_OPTIONS) {
+                if (w === selectedWeek) continue;
+                for (const rawU of allList) {
+                  const uId = rawU.id || rawU.userId;
+                  if (!uId) continue;
+                  const uEmail = (rawU.email || "").trim();
+                  const testCodes = [
+                    generateUserUniquePracticalCode(uId, w, uEmail),
+                    generateUserUniquePracticalCode(uId, w, ""),
+                  ].map(normalizePracticalCode);
+
+                  if (testCodes.some((tc) => norm === tc || tc.endsWith(norm) || norm === tc.replace(`PRAC-W${w}-`, ""))) {
+                    setError(`⚠️ This code belongs to ${rawU.firstName} ${rawU.lastName} for WEEK ${w}! You currently have Week ${selectedWeek} selected. Please select Week ${w} from the dropdown to verify.`);
+                    setSubmittingCode(false);
+                    return;
+                  }
+                }
+              }
+            }
+          }
+        } catch (globalErr) {
+          console.warn("Global trainee lookup failed", globalErr);
+        }
+      }
+
+      // Helpful check: If no match in selectedWeek, check if this code belongs to ANY trainee in local users for another week!
       if (!targetUser) {
         for (const w of WEEK_OPTIONS) {
           if (w === selectedWeek) continue;
@@ -407,15 +483,15 @@ export default function AdminPracticalAttendancePage() {
       }
 
       if (!targetUser) {
-        setError(`❌ Invalid or Fake Code! No trainee in this cohort has the attendance code "${rawInput}" for Week ${selectedWeek}.`);
+        setError(`❌ Invalid Code! Could not find any registered trainee matching code "${rawInput}" for Week ${selectedWeek}.`);
         setSubmittingCode(false);
         return;
       }
 
       // Record checkin
-      await handleManualCheckinUser(targetUser, norm);
+      await handleManualCheckinUser(targetUser, norm, targetCohortId);
 
-      setSuccess(`✅ Verified! ${targetUser.firstName} ${targetUser.lastName} (${targetUser.groupName || "Trainee"}) marked PRESENT for Week ${selectedWeek} Practical Session!`);
+      setSuccess(`✅ Verified! ${targetUser.firstName} ${targetUser.lastName} (${targetUser.groupName || "Trainee"}${targetCohortName ? ` • ${targetCohortName}` : ""}) marked PRESENT for Week ${selectedWeek} Practical Session!`);
       setSubmittedCodeInput("");
       setSelectedStudentId("");
     } catch {
@@ -444,7 +520,14 @@ export default function AdminPracticalAttendancePage() {
     );
   }
 
-  const groupUsers = selectedGroup ? users.filter((u) => u.groupId === selectedGroup) : users;
+  const groupUsers = (selectedGroup ? users.filter((u) => u.groupId === selectedGroup) : users).filter((u) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const fullName = `${u.firstName} ${u.lastName}`.toLowerCase();
+    const email = (u.email || "").toLowerCase();
+    const uCode = generateUserUniquePracticalCode(u.id, selectedWeek, u.email).toLowerCase();
+    return fullName.includes(q) || email.includes(q) || uCode.includes(q);
+  });
   const checkedInCount = users.filter((u) => isCheckedIn(u.id)).length;
 
   return (
@@ -654,6 +737,28 @@ export default function AdminPracticalAttendancePage() {
               {submittingCode ? "Verifying Code..." : "Verify & Mark Trainee Present ✓"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Search Filter for Matrix and Codes Tabs */}
+      {(activeTab === "matrix" || activeTab === "group_codes") && (
+        <div className="mb-4 bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs flex items-center gap-3">
+          <span className="text-sm pl-1">🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search trainee by Name, Email, or Verification Code..."
+            className="flex-1 bg-transparent border-0 text-xs text-slate-800 placeholder-slate-400 font-bold focus:outline-none"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="text-[10px] font-bold text-slate-500 hover:text-slate-800 px-2 py-1 rounded bg-slate-100 cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
 

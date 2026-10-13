@@ -206,14 +206,20 @@ export function saveStoredPracticalCheckin(checkin: PracticalCheckin): void {
   if (typeof window === "undefined") return;
   try {
     const existing = getStoredPracticalCheckins();
+    const cleanWeek = Number(checkin.weekNumber ?? (checkin as any).week_number ?? (checkin as any).week);
+    const cleanUserId = String(checkin.userId || (checkin as any).user_id || "").trim().toLowerCase();
+    const normalizedCheckin: PracticalCheckin = {
+      ...checkin,
+      weekNumber: isNaN(cleanWeek) ? 1 : cleanWeek,
+    };
     const updated = [
-      checkin,
+      normalizedCheckin,
       ...existing.filter(
         (c) =>
-          c.id !== checkin.id &&
+          c.id !== normalizedCheckin.id &&
           !(
-            String(c.userId || (c as any).user_id || "").trim().toLowerCase() === String(checkin.userId).trim().toLowerCase() &&
-            Number(c.weekNumber) === Number(checkin.weekNumber)
+            String(c.userId || (c as any).user_id || "").trim().toLowerCase() === cleanUserId &&
+            Number(c.weekNumber ?? (c as any).week_number ?? (c as any).week) === cleanWeek
           )
       ),
     ];
@@ -227,7 +233,7 @@ export function clearStoredPracticalCheckins(cohortId?: string, weekNumber?: num
     const existing = getStoredPracticalCheckins();
     const updated = existing.filter((c) => {
       if (cohortId && c.cohortId !== cohortId) return true;
-      if (weekNumber !== undefined && Number(c.weekNumber) !== Number(weekNumber)) return true;
+      if (weekNumber !== undefined && Number(c.weekNumber ?? (c as any).week_number ?? (c as any).week) !== Number(weekNumber)) return true;
       if (userId && String(c.userId || (c as any).user_id || "").trim().toLowerCase() !== String(userId).trim().toLowerCase()) return true;
       return false;
     });
@@ -241,7 +247,7 @@ export function clearStoredPracticalCheckins(cohortId?: string, weekNumber?: num
 export function getUserPracticalCheckinWeeks(userId: string): number[] {
   const checkins = getStoredPracticalCheckins();
   if (!userId) {
-    return Array.from(new Set(checkins.map((c) => Number(c.weekNumber)).filter((w) => !isNaN(w))));
+    return Array.from(new Set(checkins.map((c) => Number(c.weekNumber ?? (c as any).week_number ?? (c as any).week)).filter((w) => !isNaN(w) && w > 0)));
   }
   const uIdNorm = String(userId).trim().toLowerCase();
   return Array.from(
@@ -251,8 +257,8 @@ export function getUserPracticalCheckinWeeks(userId: string): number[] {
           const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
           return !cUid || cUid === uIdNorm;
         })
-        .map((c) => Number(c.weekNumber))
-        .filter((w) => !isNaN(w))
+        .map((c) => Number(c.weekNumber ?? (c as any).week_number ?? (c as any).week))
+        .filter((w) => !isNaN(w) && w > 0)
     )
   );
 }
@@ -285,16 +291,21 @@ export async function fetchAndSyncUserPracticalCheckins(userId: string): Promise
         ? serverCheckins.data
         : [];
       
-      const list: PracticalCheckin[] = rawList.map((c) => ({
-        id: c.id || `chk-${c.weekNumber}-${userId}`,
-        cohortId: c.cohortId || c.cohort_id || "",
-        groupId: c.groupId || c.group_id || "",
-        userId: c.userId || c.user_id || userId,
-        weekNumber: Number(c.weekNumber),
-        codeSubmitted: c.codeSubmitted || c.code_submitted || "",
-        checkedInAt: c.checkedInAt || c.created_at || new Date().toISOString(),
-        verifiedBy: c.verifiedBy || c.verified_by,
-      }));
+      const list: PracticalCheckin[] = rawList
+        .map((c) => {
+          const wNum = Number(c.weekNumber ?? c.week_number ?? c.week);
+          return {
+            id: c.id || `chk-${wNum || 1}-${userId}`,
+            cohortId: c.cohortId || c.cohort_id || "",
+            groupId: c.groupId || c.group_id || "",
+            userId: String(c.userId || c.user_id || c.user?.id || userId),
+            weekNumber: isNaN(wNum) ? 1 : wNum,
+            codeSubmitted: c.codeSubmitted || c.code_submitted || "",
+            checkedInAt: c.checkedInAt || c.checked_in_at || c.created_at || new Date().toISOString(),
+            verifiedBy: c.verifiedBy || c.verified_by,
+          };
+        })
+        .filter((c) => !isNaN(c.weekNumber) && c.weekNumber > 0);
 
       if (list.length > 0) {
         list.forEach((c) => saveStoredPracticalCheckin(c));
@@ -307,7 +318,7 @@ export async function fetchAndSyncUserPracticalCheckins(userId: string): Promise
 
   return getStoredPracticalCheckins().filter((c) => {
     const cUid = String(c.userId || (c as any).user_id || (c as any).user?.id || "").trim().toLowerCase();
-    return cUid === uIdNorm;
+    return !cUid || cUid === uIdNorm;
   });
 }
 
